@@ -23,7 +23,7 @@ export default function CategoriesClient({ initialCategories }: CategoriesClient
     if (!newCategoryName.trim()) return;
 
     setLoading(true);
-    const result = await createCategory(newCategoryName.trim(), "normal");
+    const result = await createCategory(newCategoryName.trim());
     setLoading(false);
 
     if (result.success) {
