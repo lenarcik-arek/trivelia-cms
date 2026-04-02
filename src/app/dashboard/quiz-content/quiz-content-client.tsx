@@ -13,9 +13,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Trash2, Plus, Loader2, ChevronRight, HelpCircle, LayoutGrid, Home } from "lucide-react";
+import { 
+  Trash2, 
+  Plus, 
+  Loader2, 
+  ChevronRight, 
+  HelpCircle, 
+  LayoutGrid, 
+  Home 
+} from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { 
+  DeleteConfirmationDialog, 
+  isDeleteConfirmationRequired 
+} from "@/components/dashboard/delete-confirmation-dialog";
 
 interface QuizContentClientProps {
   initialCategories: Category[];
@@ -37,6 +49,19 @@ export default function QuizContentClient({
   // UI state
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // --- Deletion Confirmation State ---
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => Promise<void> | void;
+  }>({
+    open: false,
+    title: "",
+    description: "",
+    onConfirm: () => {},
+  });
 
   // --- Category Form State ---
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -72,9 +97,7 @@ export default function QuizContentClient({
     }
   };
 
-  const handleDeleteCategory = async (id: string, name: string) => {
-    if (!confirm(`Czy na pewno usunąć kategorię "${name}"?`)) return;
-
+  const deleteCategoryFinal = async (id: string) => {
     setDeletingId(id);
     const result = await deleteCategory(id);
     setDeletingId(null);
@@ -85,6 +108,20 @@ export default function QuizContentClient({
     } else {
       toast.error("Błąd: " + result.error);
     }
+  };
+
+  const handleDeleteCategory = (id: string, name: string) => {
+    const action = () => deleteCategoryFinal(id);
+    if (!isDeleteConfirmationRequired()) {
+      action();
+      return;
+    }
+    setDeleteDialog({
+      open: true,
+      title: `Usunąć kategorię "${name}"?`,
+      description: "Usunięcie kategorii spowoduje, że przypisane do niej pytania stracą swoją kategorię główną.",
+      onConfirm: action,
+    });
   };
 
   // --- Questions Actions ---
@@ -122,8 +159,7 @@ export default function QuizContentClient({
     }
   };
 
-  const handleDeleteQuestion = async (id: string) => {
-    if (!confirm("Czy na pewno chcesz usunąć to pytanie?")) return;
+  const deleteQuestionFinal = async (id: string) => {
     setDeletingId(id);
     const result = await deleteQuestion(id);
     setDeletingId(null);
@@ -134,6 +170,20 @@ export default function QuizContentClient({
     } else {
       toast.error("Błąd: " + result.error);
     }
+  };
+
+  const handleDeleteQuestion = (id: string) => {
+    const action = () => deleteQuestionFinal(id);
+    if (!isDeleteConfirmationRequired()) {
+      action();
+      return;
+    }
+    setDeleteDialog({
+      open: true,
+      title: "Usunąć to pytanie?",
+      description: "Pytanie zostanie trwale usunięte z bazy danych quizów.",
+      onConfirm: action,
+    });
   };
 
   const updateAnswer = (index: number, val: string) => {
@@ -405,6 +455,15 @@ export default function QuizContentClient({
           </div>
         </div>
       )}
+
+      <DeleteConfirmationDialog
+        open={deleteDialog.open}
+        onOpenChange={(open) => setDeleteDialog(prev => ({ ...prev, open }))}
+        onConfirm={deleteDialog.onConfirm}
+        title={deleteDialog.title}
+        description={deleteDialog.description}
+      />
     </div>
   );
 }
+

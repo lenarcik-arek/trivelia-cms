@@ -33,6 +33,7 @@ import type { QuizStopStatus, QuizStopType } from "@/types";
 import { MapAddModeBar } from "./components/map-add-mode-bar";
 import { QuizStopsFilters } from "./components/quiz-stops-filters";
 import { QuizStopsTable } from "./components/quiz-stops-table";
+import { DeleteConfirmationDialog, isDeleteConfirmationRequired } from "@/components/dashboard/delete-confirmation-dialog";
 
 // ── Init ──────────────────────────────────────────────────────────────
 fixLeafletIcons();
@@ -90,6 +91,15 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [mapTarget, setMapTarget] = useState<[number, number] | null>(null);
 
+  // Deletion Dialog State
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    onConfirm: () => Promise<void> | void;
+  }>({
+    open: false,
+    onConfirm: () => {},
+  });
+
   // Filters
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterType, setFilterType] = useState("all");
@@ -112,10 +122,7 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
     [addMode]
   );
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!confirm("Czy na pewno chcesz usunąć ten Quiz Stop?")) return;
+  const deleteStopFinal = async (id: string) => {
     setDeletingId(id);
     const result = await deleteQuizStop(id);
     if (result.success) {
@@ -125,6 +132,22 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
       toast.error("Błąd usuwania: " + result.error);
     }
     setDeletingId(null);
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const action = () => deleteStopFinal(id);
+    if (!isDeleteConfirmationRequired()) {
+      action();
+      return;
+    }
+
+    setDeleteDialog({
+      open: true,
+      onConfirm: action,
+    });
   };
 
   const handleShowOnMap = (lat: number, lng: number) => {
@@ -290,6 +313,14 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
           getStatus={getStatus}
         />
       </div>
+
+      <DeleteConfirmationDialog
+        open={deleteDialog.open}
+        onOpenChange={(open) => setDeleteDialog(prev => ({ ...prev, open }))}
+        onConfirm={deleteDialog.onConfirm}
+        title="Usunąć Quiz Stop?"
+        description="Ten punkt zniknie z mapy graczy. Tej operacji nie można cofnąć."
+      />
     </div>
   );
 }
