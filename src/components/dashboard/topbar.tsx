@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,19 +12,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useState } from "react";
-import { LogOut, User, Menu, MapPin, HelpCircle, FolderOpen, Users, LayoutDashboard, Settings } from "lucide-react";
+import { LogOut, User, Menu } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/quiz-stops", label: "Quiz Stopy", icon: MapPin },
-  { href: "/dashboard/questions", label: "Pytania", icon: HelpCircle },
-  { href: "/dashboard/categories", label: "Kategorie", icon: FolderOpen },
-  { href: "/dashboard/users", label: "Użytkownicy", icon: Users },
-];
+import { navItems, settingsItem } from "@/lib/navigation";
 
 interface TopbarProps {
   email?: string;
@@ -101,23 +93,22 @@ export function Topbar({ email }: TopbarProps) {
               {/* Mobile Bottom */}
               <div className="px-3 py-4 border-t border-slate-700/50 mt-auto">
                 <Link
-                  href="/dashboard/settings"
+                  href={settingsItem.href}
                   onClick={() => setIsOpen(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
                 >
-                  <Settings className="w-5 h-5" />
-                  Ustawienia
+                  <settingsItem.icon className="w-5 h-5" />
+                  {settingsItem.label}
                 </Link>
               </div>
             </div>
           </SheetContent>
         </Sheet>
-        <h2 className="text-lg font-semibold text-slate-800">Panel Administracyjny</h2>
       </div>
 
       <DropdownMenu>
         <DropdownMenuTrigger>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer outline-none">
             <Avatar className="w-8 h-8">
               <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
                 {initials}

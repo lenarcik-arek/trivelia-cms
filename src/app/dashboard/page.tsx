@@ -5,14 +5,19 @@ import { MapPin, HelpCircle, Users, Coins } from "lucide-react";
 async function getStats() {
   const supabase = await createClient();
 
-  const [stopsRes, profilesRes] = await Promise.all([
+  // Get counts for each category
+  const [stopsRes, profilesRes, categoriesRes, questionsRes] = await Promise.all([
     supabase.from("quiz_stops").select("*", { count: "exact", head: true }),
     supabase.from("profiles").select("*", { count: "exact", head: true }),
+    supabase.from("categories").select("*", { count: "exact", head: true }).is("organization_id", null),
+    supabase.from("questions").select("*", { count: "exact", head: true }),
   ]);
 
   return {
     quizStops: stopsRes.count ?? 0,
     totalUsers: profilesRes.count ?? 0,
+    normalCategories: categoriesRes.count ?? 0,
+    normalQuestions: questionsRes.count ?? 0,
   };
 }
 
@@ -23,14 +28,21 @@ export default async function DashboardPage() {
     {
       title: "Quiz Stopy",
       value: stats.quizStops,
-      description: "Aktywne punkty na mapie",
+      description: "Punkty na mapie",
       icon: MapPin,
       gradient: "from-blue-500 to-cyan-400",
     },
     {
+      title: "Kategorie zwykłe",
+      value: stats.normalCategories,
+      description: "Ogólnodostępne kategorie",
+      icon: Users, // Changed to something more list-like if possible, or keep Users temporarily
+      gradient: "from-amber-500 to-orange-400",
+    },
+    {
       title: "Pytania",
-      value: "—",
-      description: "Wkrótce dostępne",
+      value: stats.normalQuestions,
+      description: "Łączna liczba pytań",
       icon: HelpCircle,
       gradient: "from-violet-500 to-purple-400",
     },
@@ -41,22 +53,10 @@ export default async function DashboardPage() {
       icon: Users,
       gradient: "from-emerald-500 to-teal-400",
     },
-    {
-      title: "Monety w obiegu",
-      value: "—",
-      description: "Wkrótce dostępne",
-      icon: Coins,
-      gradient: "from-amber-500 to-orange-400",
-    },
   ];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
-        <p className="text-slate-500 mt-1">Witaj w panelu zarządzania Trivelia</p>
-      </div>
-
+    <div className="space-y-6 pt-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((card) => (
           <Card key={card.title} className="border-slate-200 shadow-sm hover:shadow-md transition-shadow">

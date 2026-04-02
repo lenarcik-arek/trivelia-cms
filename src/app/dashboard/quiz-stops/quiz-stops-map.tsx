@@ -1,351 +1,295 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
   Marker,
   Popup,
+  useMap,
   useMapEvents,
 } from "react-leaflet";
-import L from "leaflet";
+import { LeafletMouseEvent } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import MarkerClusterGroup from "react-leaflet-cluster";
+import { toast } from "sonner";
+
 import { createQuizStop, deleteQuizStop, type QuizStop } from "./actions";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Trash2 } from "lucide-react";
+
+import { parseLocation } from "@/lib/geo";
+import { fixLeafletIcons, typeIcons } from "@/lib/map-icons";
 import {
-  MapPin,
-  Trash2,
-  MousePointerClick,
-} from "lucide-react";
+  DEFAULT_MAP_CENTER,
+  DEFAULT_MAP_ZOOM,
+  FOCUSED_MAP_ZOOM,
+  MAP_TILE_URL,
+  MAP_TILE_ATTRIBUTION,
+} from "@/lib/constants";
+import type { QuizStopStatus, QuizStopType } from "@/types";
 
-// Fix Leaflet default marker icon issue with bundlers
-delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
-  iconUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
-  shadowUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
-});
+import { MapAddModeBar } from "./components/map-add-mode-bar";
+import { QuizStopsFilters } from "./components/quiz-stops-filters";
+import { QuizStopsTable } from "./components/quiz-stops-table";
 
-// Custom marker icons
-function createCustomIcon(color: string, letter: string = "Q") {
-  return L.divIcon({
-    className: "custom-marker",
-    html: `<div style="
-      width: 32px; height: 32px;
-      background: ${color};
-      border: 3px solid white;
-      border-radius: 50% 50% 50% 0;
-      transform: rotate(-45deg);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      display: flex; align-items: center; justify-content: center;
-    "><div style="
-      transform: rotate(45deg);
-      color: white; font-weight: 700; font-size: 12px;
-    ">${letter}</div></div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
-  });
-}
+// ── Init ──────────────────────────────────────────────────────────────
+fixLeafletIcons();
 
-const typeIcons: Record<string, L.DivIcon> = {
-  normal: createCustomIcon("#3b82f6", "N"), // Blue for normal
-  premium: createCustomIcon("#f59e0b", "P"), // Amber/Gold for premium
-};
-
+// ── Types ─────────────────────────────────────────────────────────────
 interface ParsedQuizStop extends QuizStop {
   lat: number;
   lng: number;
 }
 
-function parseLocation(location: any): { lat: number; lng: number } {
-  if (!location) return { lat: 52.2297, lng: 21.0122 };
-  
-  if (typeof location === 'string') {
-    const coords = location.replace("POINT(", "").replace(")", "").trim().split(" ");
-    const lng = parseFloat(coords[0]);
-    const lat = parseFloat(coords[1]);
-    if (isNaN(lng) || isNaN(lat)) return { lat: 52.2297, lng: 21.0122 };
-    return { lat, lng };
-  }
-
-  if (location && location.type === 'Point' && Array.isArray(location.coordinates)) {
-    return { lat: parseFloat(location.coordinates[1]), lng: parseFloat(location.coordinates[0]) };
-  }
-
-  return { lat: 52.2297, lng: 21.0122 };
+// ── Helpers ───────────────────────────────────────────────────────────
+function getStatus(stop: QuizStop): QuizStopStatus {
+  const isExpired = new Date(stop.expires_at) < new Date();
+  const isOutOfCoins = stop.coin_budget <= 0;
+  return isExpired || isOutOfCoins ? "inactive" : "active";
 }
 
-// ----------- Single click handler inside map -----------
-interface ClickHandlerProps {
-  onMapClick: (lat: number, lng: number) => void;
-  addMode: string | null; // "normal" | "premium" | null
-}
-
-function SingleClickHandler({ onMapClick, addMode }: ClickHandlerProps) {
-  useMapEvents({
-    click(e) {
-      if (addMode) {
-        onMapClick(e.latlng.lat, e.latlng.lng);
-      }
-    },
-  });
-
+// ── Sub-components ────────────────────────────────────────────────────
+function MapController({ center, zoom }: { center: [number, number]; zoom?: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center[0] !== 0 && center[1] !== 0) {
+      map.setView(center, zoom ?? map.getZoom());
+    }
+  }, [center, zoom, map]);
   return null;
 }
 
-// ----------- Main component -----------
+function MapEventsHandler({
+  onMapClick,
+  addMode,
+}: {
+  onMapClick: (lat: number, lng: number) => void;
+  addMode: QuizStopType | null;
+}) {
+  useMapEvents({
+    click(e: LeafletMouseEvent) {
+      if (addMode) onMapClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
 
+// ── Main Component ────────────────────────────────────────────────────
 interface QuizStopsMapProps {
   initialStops: QuizStop[];
 }
 
 export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
-  const [stops, setStops] = useState<ParsedQuizStop[]>(() => {
-    const parsed = initialStops.map((s) => ({ ...s, ...parseLocation(s.location) }));
-    // Diagnostic log
-    console.log(`[QuizStopsMap] Received ${initialStops.length} stops from server`);
-    console.log(`[QuizStopsMap] Parsed ${parsed.length} stops`);
-    const invalid = parsed.filter(s => isNaN(s.lat) || isNaN(s.lng));
-    console.log(`[QuizStopsMap] Invalid (NaN coords): ${invalid.length}`, invalid.map(s => ({ id: s.id, location: s.location })));
-    const defaultPos = parsed.filter(s => s.lat === 52.2297 && s.lng === 21.0122);
-    console.log(`[QuizStopsMap] Fell back to default Warsaw position: ${defaultPos.length}`, defaultPos.map(s => ({ id: s.id, location: s.location })));
-    return parsed;
-  });
-  
-  // "null" means saving/creating is off, otherwise 'normal' or 'premium'
-  const [addMode, setAddMode] = useState<"normal" | "premium" | null>(null);
-  
+  // ── State ─────────────────────────────────────────────────────────
+  const [stops, setStops] = useState<ParsedQuizStop[]>(() =>
+    initialStops.map((s) => ({ ...s, ...parseLocation(s.location) }))
+  );
+  const [addMode, setAddMode] = useState<QuizStopType | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [mapTarget, setMapTarget] = useState<[number, number] | null>(null);
 
-  const handleMapClick = useCallback(async (lat: number, lng: number) => {
-    if (!addMode) return;
-    
-    // Create right away
-    const type = addMode;
-    const result = await createQuizStop(lat, lng, type);
-    
-    if (result.success && result.data) {
-      const newStop: ParsedQuizStop = {
-        ...result.data,
-        lat: lat,
-        lng: lng,
-      };
-      setStops((prev) => [newStop, ...prev]);
-    } else if (result.success) {
-      // Fallback if data is not returned but success is true (shouldn't happen with .select())
-      const expiresAtDate = new Date();
-      expiresAtDate.setHours(expiresAtDate.getHours() + 24);
-      const newStop: ParsedQuizStop = {
-        id: crypto.randomUUID(),
-        type: type,
-        categories: type === "normal" ? ["Generowanie..."] : [],
-        location: `POINT(${lng} ${lat})`,
-        coin_budget: 20,
-        expires_at: expiresAtDate.toISOString(),
-        created_at: new Date().toISOString(),
-        lat: lat,
-        lng: lng,
-      };
-      setStops((prev) => [newStop, ...prev]);
-    } else {
-      alert("Błąd: " + result.error);
-    }
-  }, [addMode]);
+  // Filters
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterType, setFilterType] = useState("all");
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [sortField, setSortField] = useState<"created_at" | "expires_at">("created_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
-  const handleDelete = async (id: string) => {
+  // ── Handlers ──────────────────────────────────────────────────────
+  const handleMapClick = useCallback(
+    async (lat: number, lng: number) => {
+      if (!addMode) return;
+      const result = await createQuizStop(lat, lng, addMode);
+      if (result.success && result.data) {
+        setStops((prev) => [{ ...result.data!, lat, lng }, ...prev]);
+        toast.success("Quiz Stop dodany pomyślnie.");
+      } else {
+        toast.error("Błąd: " + result.error);
+      }
+    },
+    [addMode]
+  );
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
     if (!confirm("Czy na pewno chcesz usunąć ten Quiz Stop?")) return;
     setDeletingId(id);
     const result = await deleteQuizStop(id);
     if (result.success) {
       setStops((prev) => prev.filter((s) => s.id !== id));
+      toast.success("Quiz Stop usunięty.");
     } else {
-      alert("Błąd usuwania: " + result.error);
+      toast.error("Błąd usuwania: " + result.error);
     }
     setDeletingId(null);
   };
 
-  // Center on Warsaw or first valid stop
-  const validStops = stops.filter(s => !isNaN(s.lat) && !isNaN(s.lng));
-  const center: [number, number] =
-    validStops.length > 0
-      ? [validStops[0].lat, validStops[0].lng]
-      : [52.2297, 21.0122];
+  const handleShowOnMap = (lat: number, lng: number) => {
+    setMapTarget([lat, lng]);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
+  // ── Derived data ──────────────────────────────────────────────────
+  const allCategories = useMemo(
+    () => Array.from(new Set(stops.flatMap((s) => s.categories || []))).sort(),
+    [stops]
+  );
+
+  const filteredStops = useMemo(() => {
+    const result = stops.filter((s) => {
+      if (filterStatus !== "all" && getStatus(s) !== filterStatus) return false;
+      if (filterType !== "all" && s.type !== filterType) return false;
+      if (filterCategory !== "all" && !(s.categories || []).includes(filterCategory))
+        return false;
+      return true;
+    });
+    result.sort((a, b) => {
+      const valA = new Date(a[sortField]).getTime();
+      const valB = new Date(b[sortField]).getTime();
+      return sortOrder === "desc" ? valB - valA : valA - valB;
+    });
+    return result;
+  }, [stops, filterStatus, filterType, filterCategory, sortField, sortOrder]);
+
+  const initialCenter = useMemo<[number, number]>(() => {
+    const valid = stops.filter((s) => !isNaN(s.lat) && !isNaN(s.lng));
+    return valid.length > 0 ? [valid[0].lat, valid[0].lng] : DEFAULT_MAP_CENTER;
+  }, [stops]);
+
+  // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="space-y-4">
-      {/* Top bar */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Quiz Stopy</h1>
-          <p className="text-slate-500 mt-1">
-            Zarządzaj punktami quiz na mapie. Włącz <strong>Tryb Dodawania</strong> aby tworzyć punkty jednym kliknięciem.
-          </p>
-        </div>
-        <Badge variant="secondary" className="text-sm py-1 px-3">
-          <MapPin className="w-4 h-4 mr-1" />
-          {stops.length} {stops.length === 1 ? "punkt" : "punktów"}
-        </Badge>
-      </div>
-
-      {/* Creation mode bar */}
-      <Card className={`border transition-colors ${addMode ? "border-amber-400 bg-amber-50" : "border-slate-200"}`}>
-        <CardContent className="py-3 px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 text-slate-700 font-medium">
-            <MousePointerClick className="w-5 h-5" />
-            Tryb dodawania:
-          </div>
-          
-          <div className="flex gap-2">
-            <Button
-              variant={addMode === null ? "default" : "outline"}
-              onClick={() => setAddMode(null)}
-              className={addMode === null ? "bg-slate-800" : ""}
-            >
-              Wyłączony
-            </Button>
-            <Button
-              variant={addMode === "normal" ? "default" : "outline"}
-              onClick={() => setAddMode("normal")}
-              className={addMode === "normal" ? "bg-blue-600 hover:bg-blue-700" : ""}
-            >
-              Normalny
-            </Button>
-            <Button
-              variant={addMode === "premium" ? "default" : "outline"}
-              onClick={() => setAddMode("premium")}
-              className={addMode === "premium" ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}
-            >
-              Premium
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+    <div className="space-y-6 pt-2">
+      <MapAddModeBar addMode={addMode} onModeChange={setAddMode} />
 
       {/* Map */}
-      <div className={`rounded-xl overflow-hidden border shadow-sm relative transition-all ${addMode ? "ring-2 ring-amber-400" : "border-slate-200"}`}>
+      <div
+        className={`rounded-2xl overflow-hidden border-2 shadow-lg relative transition-all ${
+          addMode
+            ? "ring-4 ring-amber-400/20 border-amber-300"
+            : "border-slate-200"
+        }`}
+      >
         <style>{`
-          .leaflet-container { font-family: inherit; }
+          .leaflet-container { font-family: inherit; z-index: 10; }
           .leaflet-container.crosshair-cursor { cursor: crosshair !important; }
+          .marker-cluster div {
+            width: 30px; height: 30px; margin-left: 5px; margin-top: 5px;
+            border-radius: 15px; text-align: center; font-variant: tabular-nums;
+            font-size: 12px; font-weight: bold; display: flex;
+            align-items: center; justify-content: center; color: white;
+            background: #333;
+          }
+          .marker-cluster-small { background-color: rgba(181, 226, 140, 0.6); }
+          .marker-cluster-small div { background-color: #6ecc39; }
+          .marker-cluster-medium { background-color: rgba(241, 211, 87, 0.6); }
+          .marker-cluster-medium div { background-color: #f0c20c; }
+          .marker-cluster-large { background-color: rgba(253, 156, 115, 0.6); }
+          .marker-cluster-large div { background-color: #f18017; }
         `}</style>
+
         <MapContainer
-          center={center}
-          zoom={15}
-          style={{ height: "60vh", width: "100%" }}
-          zoomControl={true}
+          center={initialCenter}
+          zoom={DEFAULT_MAP_ZOOM}
+          style={{ height: "65vh", width: "100%" }}
+          zoomControl
           className={addMode ? "crosshair-cursor" : ""}
         >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          <TileLayer attribution={MAP_TILE_ATTRIBUTION} url={MAP_TILE_URL} />
+          <MapController
+            center={mapTarget || initialCenter}
+            zoom={mapTarget ? FOCUSED_MAP_ZOOM : undefined}
           />
+          <MapEventsHandler onMapClick={handleMapClick} addMode={addMode} />
 
-          <SingleClickHandler
-            onMapClick={handleMapClick}
-            addMode={addMode}
-          />
-
-          {/* Existing stops */}
-          {validStops.map((stop) => (
-            <Marker
-              key={stop.id}
-              position={[stop.lat, stop.lng]}
-              icon={typeIcons[stop.type] || typeIcons.normal}
-            >
-              <Popup>
-                <div className="space-y-2 min-w-[180px]">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-bold text-white ${
-                        stop.type === "premium" ? "bg-amber-500" : "bg-blue-500"
-                      }`}
+          <MarkerClusterGroup
+            key={`cluster-${stops.length}-${filterStatus}-${filterType}`}
+            chunkedLoading
+          >
+            {filteredStops.map((stop) => (
+              <Marker
+                key={`${stop.id}-${stop.lat}-${stop.lng}`}
+                position={[stop.lat, stop.lng]}
+                icon={typeIcons[stop.type] || typeIcons.normal}
+              >
+                <Popup>
+                  <div className="p-1 space-y-3 min-w-[200px]">
+                    <div className="flex items-center justify-between border-b pb-2">
+                      <Badge
+                        className={
+                          stop.type === "premium" ? "bg-amber-500" : "bg-blue-500"
+                        }
+                      >
+                        {stop.type.toUpperCase()}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className={
+                          getStatus(stop) === "active"
+                            ? "text-emerald-600 bg-emerald-50 border-emerald-200"
+                            : "text-red-600 bg-red-50 border-red-200"
+                        }
+                      >
+                        {getStatus(stop).toUpperCase()}
+                      </Badge>
+                    </div>
+                    <div className="text-xs space-y-1.5 text-slate-600">
+                      <div>
+                        <b>📦 Kategorie:</b> {stop.categories?.join(", ") || "Brak"}
+                      </div>
+                      <div>
+                        <b>🪙 Budżet:</b> {stop.coin_budget} monet
+                      </div>
+                      <div>
+                        <b>🕒 Wygasa:</b> {new Date(stop.expires_at).toLocaleString()}
+                      </div>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="w-full h-8 text-xs"
+                      onClick={(e) => handleDelete(e, stop.id)}
+                      disabled={deletingId === stop.id}
                     >
-                      {stop.type === "premium" ? "PREMIUM" : "NORMAL"}
-                    </span>
-                    <span className="font-mono text-xs text-slate-500" title={stop.id}>
-                      ...{stop.id.slice(-6)}
-                    </span>
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Usuń punkt
+                    </Button>
                   </div>
-                  <div className="text-xs text-slate-600 space-y-1">
-                    {stop.categories && stop.categories.length > 0 && (
-                      <p>📚 <b>Kategorie:</b> {stop.categories.join(", ")}</p>
-                    )}
-                    <p>🪙 <b>Budżet:</b> {stop.coin_budget} monet</p>
-                    <p>⏰ <b>Wygasa:</b> {new Date(stop.expires_at).toLocaleString()}</p>
-                    <p className="font-mono text-[10px] text-slate-400">
-                      📍 {stop.lat.toFixed(6)}, {stop.lng.toFixed(6)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleDelete(stop.id)}
-                    disabled={deletingId === stop.id}
-                    className="w-full mt-1 px-3 py-1.5 text-xs bg-red-50 text-red-600 hover:bg-red-100 rounded-md transition-colors flex items-center justify-center gap-1"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    {deletingId === stop.id ? "Usuwanie..." : "Usuń"}
-                  </button>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
+                </Popup>
+              </Marker>
+            ))}
+          </MarkerClusterGroup>
         </MapContainer>
       </div>
 
-      {/* Stops list */}
-      {validStops.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Wszystkie Quiz Stopy</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y divide-slate-100">
-              {validStops.map((stop) => (
-                <div
-                  key={stop.id}
-                  className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center text-white text-xs font-bold ${
-                        stop.type === "premium" ? "bg-amber-500" : "bg-blue-500"
-                      }`}
-                    >
-                      {stop.type === "premium" ? "PREM" : "NORM"}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">
-                        Quiz Stop <span className="text-slate-400 font-mono font-normal">...{stop.id.slice(-6)}</span>
-                      </p>
-                      {stop.categories && stop.categories.length > 0 && (
-                        <p className="text-xs text-slate-500">
-                          {stop.categories.join(", ")}
-                        </p>
-                      )}
-                      <p className="text-xs text-slate-400">
-                        {stop.coin_budget} 🪙 • Wygasa: {new Date(stop.expires_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(stop.id)}
-                    disabled={deletingId === stop.id}
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Filters + Table */}
+      <div className="space-y-4">
+        <QuizStopsFilters
+          filterStatus={filterStatus}
+          onFilterStatusChange={setFilterStatus}
+          filterType={filterType}
+          onFilterTypeChange={setFilterType}
+          filterCategory={filterCategory}
+          onFilterCategoryChange={setFilterCategory}
+          sortField={sortField}
+          onSortFieldChange={setSortField}
+          sortOrder={sortOrder}
+          onSortOrderChange={() => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+          allCategories={allCategories}
+          shownCount={filteredStops.length}
+          totalCount={stops.length}
+        />
+
+        <QuizStopsTable
+          stops={filteredStops}
+          deletingId={deletingId}
+          onDelete={handleDelete}
+          onShowOnMap={handleShowOnMap}
+          getStatus={getStatus}
+        />
+      </div>
     </div>
   );
 }

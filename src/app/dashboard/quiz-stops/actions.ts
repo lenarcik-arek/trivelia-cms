@@ -2,12 +2,14 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { DEFAULT_COIN_BUDGET, DEFAULT_EXPIRY_HOURS } from "@/lib/constants";
+import type { ActionResult } from "@/types";
 
 export interface QuizStop {
   id: string;
-  type: string; // 'normal' | 'premium'
+  type: string;
   categories: string[];
-  location: string; // PostGIS POINT format: 'POINT(lng lat)'
+  location: string;
   coin_budget: number;
   expires_at: string;
   created_at: string;
@@ -25,7 +27,6 @@ export async function getQuizStops(): Promise<QuizStop[]> {
     return [];
   }
 
-  console.log(`[getQuizStops] Server found ${data?.length ?? 0} records in database`);
   return data ?? [];
 }
 
@@ -33,37 +34,36 @@ export async function createQuizStop(
   lat: number,
   lng: number,
   type: string
-): Promise<{ success: boolean; error?: string; data?: QuizStop }> {
+): Promise<ActionResult<QuizStop>> {
   const supabase = await createClient();
 
   const locationPoint = `POINT(${lng} ${lat})`;
-  const coinBudget = 20;
 
-  const expiresAtDate = new Date();
-  expiresAtDate.setHours(expiresAtDate.getHours() + 24);
-  const expiresAtStr = expiresAtDate.toISOString();
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + DEFAULT_EXPIRY_HOURS);
 
   let categories: string[] = [];
   if (type === "normal") {
-    const { data: catData } = await supabase
-      .from("categories")
-      .select("name");
-      
+    const { data: catData } = await supabase.from("categories").select("name");
     if (catData && catData.length > 0) {
       const shuffled = catData.sort(() => 0.5 - Math.random());
-      categories = shuffled.slice(0, 3).map(c => c.name);
+      categories = shuffled.slice(0, 3).map((c) => c.name);
     } else {
-      categories = ["Ogólne"]; // Fallback if no categories in DB yet
+      categories = ["Ogólne"];
     }
   }
 
-  const { data, error } = await supabase.from("quiz_stops").insert({
-    type,
-    categories,
-    location: locationPoint,
-    coin_budget: coinBudget,
-    expires_at: expiresAtStr,
-  }).select().single();
+  const { data, error } = await supabase
+    .from("quiz_stops")
+    .insert({
+      type,
+      categories,
+      location: locationPoint,
+      coin_budget: DEFAULT_COIN_BUDGET,
+      expires_at: expiresAt.toISOString(),
+    })
+    .select()
+    .single();
 
   if (error) {
     console.error("Error creating quiz stop:", error);
@@ -74,11 +74,8 @@ export async function createQuizStop(
   return { success: true, data: data as QuizStop };
 }
 
-export async function deleteQuizStop(
-  id: string
-): Promise<{ success: boolean; error?: string }> {
+export async function deleteQuizStop(id: string): Promise<ActionResult> {
   const supabase = await createClient();
-
   const { error } = await supabase.from("quiz_stops").delete().eq("id", id);
 
   if (error) {

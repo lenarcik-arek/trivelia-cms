@@ -3,22 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  MapPin,
-  HelpCircle,
-  FolderOpen,
-  Users,
-  LayoutDashboard,
-  Settings,
-} from "lucide-react";
-
-const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard/quiz-stops", label: "Quiz Stopy", icon: MapPin },
-  { href: "/dashboard/questions", label: "Pytania", icon: HelpCircle },
-  { href: "/dashboard/categories", label: "Kategorie", icon: FolderOpen },
-  { href: "/dashboard/users", label: "Użytkownicy", icon: Users },
-];
+import { navItems, settingsItem } from "@/lib/navigation";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -63,11 +48,11 @@ export function Sidebar() {
       {/* Bottom */}
       <div className="px-3 py-4 border-t border-slate-700/50">
         <Link
-          href="/dashboard/settings"
+          href={settingsItem.href}
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
         >
-          <Settings className="w-5 h-5" />
-          Ustawienia
+          <settingsItem.icon className="w-5 h-5" />
+          {settingsItem.label}
         </Link>
       </div>
     </aside>
