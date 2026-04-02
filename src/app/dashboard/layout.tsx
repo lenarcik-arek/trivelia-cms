@@ -18,6 +18,19 @@ export default async function DashboardLayout({
     redirect("/login");
   }
 
+  // Sprawdzamy czy użytkownik jest uprawnionym administratorem CMS (po emailu)
+  const { data: adminData } = await supabase
+    .from("cms_admins")
+    .select("email")
+    .eq("email", user.email)
+    .single();
+
+  if (!adminData) {
+    // Jeśli nie jest na liście adminów, wylogowujemy go po stronie serwera i odrzucamy
+    await supabase.auth.signOut();
+    redirect("/login?error=unauthorized");
+  }
+
   return (
     <div className="flex h-screen bg-slate-50">
       <Sidebar />
