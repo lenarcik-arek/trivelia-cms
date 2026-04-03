@@ -9,7 +9,7 @@ export interface QuizStop {
   id: string;
   type: string;
   categories: string[];
-  location: string;
+  location: any;
   coin_budget: number;
   expires_at: string;
   created_at: string;
@@ -27,7 +27,7 @@ export async function getQuizStops(): Promise<QuizStop[]> {
     return [];
   }
 
-  return data ?? [];
+  return (data as QuizStop[]) ?? [];
 }
 
 export async function createQuizStop(

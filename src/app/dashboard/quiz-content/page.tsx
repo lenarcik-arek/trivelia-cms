@@ -1,4 +1,4 @@
-import QuizContentClient from "./quiz-content-client";
+import { CategoriesGrid } from "./categories-grid";
 import { getCategories, getQuestions } from "./actions";
 
 export default async function QuizContentPage() {
@@ -7,10 +7,5 @@ export default async function QuizContentPage() {
     getQuestions(),
   ]);
 
-  return (
-    <QuizContentClient 
-      initialCategories={categories} 
-      initialQuestions={questions} 
-    />
-  );
+  return <CategoriesGrid categories={categories} questions={questions} />;
 }

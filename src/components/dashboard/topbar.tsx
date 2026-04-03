@@ -38,8 +38,23 @@ export function Topbar({ email }: TopbarProps) {
     router.refresh();
   };
 
+  const getPageTitle = (path: string) => {
+    if (path === "/dashboard") return "Dashboard";
+    if (path === "/dashboard/quiz-stops") return "Quiz Stopy";
+    if (path === "/dashboard/quiz-content") return "Kategorie zwykłe";
+    if (path.startsWith("/dashboard/quiz-content/")) {
+      const catName = decodeURIComponent(path.split("/").pop() || "");
+      return `Kategoria: ${catName}`;
+    }
+    if (path === "/dashboard/users") return "Użytkownicy";
+    if (path === "/dashboard/settings") return "Ustawienia";
+    return "";
+  };
+
+  const pageTitle = getPageTitle(pathname);
+
   return (
-    <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-6">
+    <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-6 sticky top-0 z-30">
       <div className="flex items-center gap-4">
         <Sheet open={isOpen} onOpenChange={setIsOpen}>
           <SheetTrigger
@@ -104,6 +119,12 @@ export function Topbar({ email }: TopbarProps) {
             </div>
           </SheetContent>
         </Sheet>
+
+        {pageTitle && (
+          <h1 className="text-xl font-bold text-slate-800 ml-2 md:ml-0">
+            {pageTitle}
+          </h1>
+        )}
       </div>
 
       <DropdownMenu>
