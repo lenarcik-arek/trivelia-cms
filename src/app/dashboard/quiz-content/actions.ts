@@ -132,3 +132,47 @@ export async function deleteQuestion(id: string): Promise<ActionResult> {
   revalidatePath("/dashboard/quiz-content");
   return { success: true };
 }
+
+export async function bulkImportQuestions(
+  data: {
+    category_name: string;
+    text: string;
+    answers: Omit<Answer, "id">[];
+  }[]
+): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  // Ensure categories exist
+  const uniqueCategories = Array.from(new Set(data.map((q) => q.category_name)));
+  for (const catName of uniqueCategories) {
+    const { data: existingCat } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("name", catName)
+      .single();
+    
+    if (!existingCat) {
+      await supabase.from("categories").insert({ name: catName });
+    }
+  }
+
+  // Format questions
+  const payload = data.map((q) => ({
+    category_name: q.category_name,
+    text: q.text,
+    answers: q.answers.map((a) => ({
+      ...a,
+      id: a.isCorrect ? `${crypto.randomUUID()}_correct` : crypto.randomUUID(),
+    })),
+  }));
+
+  const { error } = await supabase.from("questions").insert(payload);
+
+  if (error) {
+    console.error("Error bulk importing questions:", error);
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath("/dashboard/quiz-content");
+  return { success: true };
+}

@@ -17,6 +17,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { navItems, settingsItem } from "@/lib/navigation";
+import { ImportQuizModal } from "@/app/dashboard/quiz-content/components/import-quiz-modal";
 
 interface TopbarProps {
   email?: string;
@@ -127,8 +128,13 @@ export function Topbar({ email }: TopbarProps) {
         )}
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger>
+      <div className="flex items-center gap-4">
+        {pathname === "/dashboard/quiz-content" && (
+          <ImportQuizModal />
+        )}
+
+        <DropdownMenu>
+          <DropdownMenuTrigger>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer outline-none">
             <Avatar className="w-8 h-8">
               <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-semibold">
@@ -150,6 +156,7 @@ export function Topbar({ email }: TopbarProps) {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      </div>
     </header>
   );
 }
