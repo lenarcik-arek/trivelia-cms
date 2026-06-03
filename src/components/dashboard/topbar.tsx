@@ -129,7 +129,7 @@ export function Topbar({ email }: TopbarProps) {
       </div>
 
       <div className="flex items-center gap-4">
-        {pathname === "/dashboard/quiz-content" && (
+        {pathname.startsWith("/dashboard/quiz-content") && (
           <ImportQuizModal />
         )}
 
