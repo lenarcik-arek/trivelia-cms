@@ -139,11 +139,11 @@ export function ImportQuizModal({ className }: ImportQuizModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className={cn("gap-2", className)}>
-          <Upload className="h-4 w-4" />
-          Importuj
-        </Button>
+      <DialogTrigger 
+        render={<Button variant="outline" size="sm" className={cn("gap-2", className)} />}
+      >
+        <Upload className="h-4 w-4" />
+        Importuj
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
