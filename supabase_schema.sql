@@ -629,7 +629,7 @@ COMMIT;
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
+    SELECT 1 FROM pg_publication_tables
     WHERE pubname = 'supabase_realtime' AND tablename = 'quiz_stops'
   ) THEN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.quiz_stops;
@@ -715,7 +715,9 @@ CREATE TABLE IF NOT EXISTS public.duels (
   created_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now()),
   expires_at timestamptz NOT NULL,
   initiator_notified boolean NOT NULL DEFAULT false,
-  joiner_notified boolean NOT NULL DEFAULT false
+  joiner_notified boolean NOT NULL DEFAULT false,
+  initiator_stories_viewed boolean NOT NULL DEFAULT false,
+  joiner_stories_viewed boolean NOT NULL DEFAULT false
 );
 
 -- Migration guard: add initiator_notified if it doesn't exist yet (idempotent)
@@ -726,6 +728,16 @@ EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 -- Migration guard: add joiner_notified if it doesn't exist yet (idempotent)
 DO $$ BEGIN
   ALTER TABLE public.duels ADD COLUMN joiner_notified boolean NOT NULL DEFAULT false;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+-- Migration guard: add initiator_stories_viewed if it doesn't exist yet
+DO $$ BEGIN
+  ALTER TABLE public.duels ADD COLUMN initiator_stories_viewed boolean NOT NULL DEFAULT false;
+EXCEPTION WHEN duplicate_column THEN NULL; END $$;
+
+-- Migration guard: add joiner_stories_viewed if it doesn't exist yet
+DO $$ BEGIN
+  ALTER TABLE public.duels ADD COLUMN joiner_stories_viewed boolean NOT NULL DEFAULT false;
 EXCEPTION WHEN duplicate_column THEN NULL; END $$;
 
 ALTER TABLE public.duels ENABLE ROW LEVEL SECURITY;
@@ -1146,7 +1158,7 @@ DECLARE
   v_init_da record;
   v_join_da record;
   i int;
-  
+
   v_init_profile record;
   v_join_profile record;
   v_rounds json;
@@ -1458,6 +1470,7 @@ BEGIN
     'duelId', d.id,
     'categoryName', d.category_name,
     'initiatorId', d.initiator_id,
+    'initiatorName', p.username,
     'initiatorAvatarUrl', p.avatar_url,
     'status', d.status,
     'createdAt', d.created_at,
@@ -1550,7 +1563,7 @@ BEGIN
   LEFT JOIN public.profiles p_init ON d.initiator_id = p_init.id
   LEFT JOIN public.profiles p_join ON d.joiner_id = p_join.id
   LEFT JOIN LATERAL (
-    SELECT 
+    SELECT
       SUM(CASE WHEN COALESCE(da_init.is_correct, false) THEN 1 ELSE 0 END) as init_correct,
       SUM(COALESCE(da_init.time_ms, 0)) as init_time,
       SUM(CASE WHEN COALESCE(da_join.is_correct, false) THEN 1 ELSE 0 END) as join_correct,
@@ -1611,7 +1624,7 @@ BEGIN
   LEFT JOIN public.profiles p_init ON d.initiator_id = p_init.id
   LEFT JOIN public.profiles p_join ON d.joiner_id = p_join.id
   LEFT JOIN LATERAL (
-    SELECT 
+    SELECT
       SUM(CASE WHEN COALESCE(da_init.is_correct, false) THEN 1 ELSE 0 END) as init_correct,
       SUM(COALESCE(da_init.time_ms, 0)) as init_time,
       SUM(CASE WHEN COALESCE(da_join.is_correct, false) THEN 1 ELSE 0 END) as join_correct,
@@ -1650,5 +1663,171 @@ BEGIN
   ) sub;
 
   RETURN v_result;
+END;
+$$;
+
+-- 12.7 get_my_duels: Returns all duels for the current user
+CREATE OR REPLACE FUNCTION public.get_my_duels()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_initiator_result json;
+  v_joiner_result json;
+  v_result json;
+BEGIN
+  SELECT COALESCE(json_agg(json_build_object(
+    'duelId', d.id,
+    'status', d.status,
+    'categoryName', d.category_name,
+    'initiatorCorrect', w.init_correct,
+    'initiatorTimeMs', w.init_time,
+    'joinerCorrect', w.join_correct,
+    'joinerTimeMs', w.join_time,
+    'correctCount', w.init_correct,
+    'isInitiator', true,
+    'won', CASE
+      WHEN d.status = 'expired' THEN true
+      WHEN w.init_wins > w.join_wins THEN true
+      ELSE false
+    END,
+    'winnerId', CASE
+      WHEN d.status = 'expired' THEN d.initiator_id
+      WHEN w.init_wins > w.join_wins THEN d.initiator_id
+      WHEN w.join_wins > w.init_wins THEN d.joiner_id
+      ELSE NULL
+    END,
+    'isTie', CASE
+      WHEN d.status = 'completed' AND w.init_wins = w.join_wins THEN true
+      ELSE false
+    END,
+    'initiatorName', p_init.username,
+    'initiatorAvatarUrl', p_init.avatar_url,
+    'joinerName', p_join.username,
+    'joinerAvatarUrl', p_join.avatar_url,
+    'rounds', w.rounds,
+    'createdAt', d.created_at,
+    'hasUnseenStories', NOT d.initiator_stories_viewed
+  )), '[]'::json) INTO v_initiator_result
+  FROM public.duels d
+  LEFT JOIN public.profiles p_init ON d.initiator_id = p_init.id
+  LEFT JOIN public.profiles p_join ON d.joiner_id = p_join.id
+  LEFT JOIN LATERAL (
+    SELECT
+      SUM(CASE WHEN COALESCE(da_init.is_correct, false) THEN 1 ELSE 0 END) as init_correct,
+      SUM(COALESCE(da_init.time_ms, 0)) as init_time,
+      SUM(CASE WHEN COALESCE(da_join.is_correct, false) THEN 1 ELSE 0 END) as join_correct,
+      SUM(COALESCE(da_join.time_ms, 0)) as join_time,
+      SUM(CASE WHEN COALESCE(da_init.is_correct, false) AND NOT COALESCE(da_join.is_correct, false) THEN 1
+               WHEN COALESCE(da_init.is_correct, false) AND COALESCE(da_join.is_correct, false) AND COALESCE(da_init.time_ms, 15000) < COALESCE(da_join.time_ms, 15000) THEN 1
+               ELSE 0 END) as init_wins,
+      SUM(CASE WHEN COALESCE(da_join.is_correct, false) AND NOT COALESCE(da_init.is_correct, false) THEN 1
+               WHEN COALESCE(da_init.is_correct, false) AND COALESCE(da_join.is_correct, false) AND COALESCE(da_join.time_ms, 15000) < COALESCE(da_init.time_ms, 15000) THEN 1
+               ELSE 0 END) as join_wins,
+      COALESCE(json_agg(json_build_object(
+        'questionIndex', q.idx,
+        'initiatorAnswer', COALESCE(da_init.answer_index, -1),
+        'initiatorCorrect', COALESCE(da_init.is_correct, false),
+        'initiatorTimeMs', COALESCE(da_init.time_ms, 0),
+        'joinerAnswer', COALESCE(da_join.answer_index, -1),
+        'joinerCorrect', COALESCE(da_join.is_correct, false),
+        'joinerTimeMs', COALESCE(da_join.time_ms, 0)
+      ) ORDER BY q.idx), '[]'::json) as rounds
+    FROM (VALUES (0), (1), (2)) AS q(idx)
+    LEFT JOIN public.duel_answers da_init ON da_init.duel_id = d.id AND da_init.user_id = d.initiator_id AND da_init.question_index = q.idx
+    LEFT JOIN public.duel_answers da_join ON da_join.duel_id = d.id AND da_join.user_id = d.joiner_id AND da_join.question_index = q.idx
+  ) w ON true
+  WHERE d.initiator_id = v_user_id;
+
+  SELECT COALESCE(json_agg(json_build_object(
+    'duelId', d.id,
+    'status', d.status,
+    'categoryName', d.category_name,
+    'initiatorCorrect', w.init_correct,
+    'initiatorTimeMs', w.init_time,
+    'joinerCorrect', w.join_correct,
+    'joinerTimeMs', w.join_time,
+    'correctCount', w.join_correct,
+    'isInitiator', false,
+    'won', CASE
+      WHEN w.join_wins > w.init_wins THEN true
+      ELSE false
+    END,
+    'winnerId', CASE
+      WHEN w.init_wins > w.join_wins THEN d.initiator_id
+      WHEN w.join_wins > w.init_wins THEN d.joiner_id
+      ELSE NULL
+    END,
+    'isTie', CASE
+      WHEN d.status = 'completed' AND w.init_wins = w.join_wins THEN true
+      ELSE false
+    END,
+    'initiatorName', p_init.username,
+    'initiatorAvatarUrl', p_init.avatar_url,
+    'joinerName', p_join.username,
+    'joinerAvatarUrl', p_join.avatar_url,
+    'rounds', w.rounds,
+    'createdAt', d.created_at,
+    'hasUnseenStories', NOT d.joiner_stories_viewed
+  )), '[]'::json) INTO v_joiner_result
+  FROM public.duels d
+  LEFT JOIN public.profiles p_init ON d.initiator_id = p_init.id
+  LEFT JOIN public.profiles p_join ON d.joiner_id = p_join.id
+  LEFT JOIN LATERAL (
+    SELECT
+      SUM(CASE WHEN COALESCE(da_init.is_correct, false) THEN 1 ELSE 0 END) as init_correct,
+      SUM(COALESCE(da_init.time_ms, 0)) as init_time,
+      SUM(CASE WHEN COALESCE(da_join.is_correct, false) THEN 1 ELSE 0 END) as join_correct,
+      SUM(COALESCE(da_join.time_ms, 0)) as join_time,
+      SUM(CASE WHEN COALESCE(da_init.is_correct, false) AND NOT COALESCE(da_join.is_correct, false) THEN 1
+               WHEN COALESCE(da_init.is_correct, false) AND COALESCE(da_join.is_correct, false) AND COALESCE(da_init.time_ms, 15000) < COALESCE(da_join.time_ms, 15000) THEN 1
+               ELSE 0 END) as init_wins,
+      SUM(CASE WHEN COALESCE(da_join.is_correct, false) AND NOT COALESCE(da_init.is_correct, false) THEN 1
+               WHEN COALESCE(da_init.is_correct, false) AND COALESCE(da_join.is_correct, false) AND COALESCE(da_join.time_ms, 15000) < COALESCE(da_init.time_ms, 15000) THEN 1
+               ELSE 0 END) as join_wins,
+      COALESCE(json_agg(json_build_object(
+        'questionIndex', q.idx,
+        'initiatorAnswer', COALESCE(da_init.answer_index, -1),
+        'initiatorCorrect', COALESCE(da_init.is_correct, false),
+        'initiatorTimeMs', COALESCE(da_init.time_ms, 0),
+        'joinerAnswer', COALESCE(da_join.answer_index, -1),
+        'joinerCorrect', COALESCE(da_join.is_correct, false),
+        'joinerTimeMs', COALESCE(da_join.time_ms, 0)
+      ) ORDER BY q.idx), '[]'::json) as rounds
+    FROM (VALUES (0), (1), (2)) AS q(idx)
+    LEFT JOIN public.duel_answers da_init ON da_init.duel_id = d.id AND da_init.user_id = d.initiator_id AND da_init.question_index = q.idx
+    LEFT JOIN public.duel_answers da_join ON da_join.duel_id = d.id AND da_join.user_id = d.joiner_id AND da_join.question_index = q.idx
+  ) w ON true
+  WHERE d.joiner_id = v_user_id;
+
+  SELECT COALESCE(json_agg(elems ORDER BY (elems->>'createdAt')::timestamptz DESC), '[]'::json) INTO v_result
+  FROM (
+    SELECT json_array_elements(v_initiator_result) AS elems
+    UNION ALL
+    SELECT json_array_elements(v_joiner_result) AS elems
+  ) sub;
+
+  RETURN v_result;
+END;
+$$;
+
+-- 12.8 mark_duel_stories_viewed: Sets stories_viewed flag to true
+CREATE OR REPLACE FUNCTION public.mark_duel_stories_viewed(p_duel_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+BEGIN
+  UPDATE public.duels
+  SET initiator_stories_viewed = true
+  WHERE id = p_duel_id AND initiator_id = v_user_id;
+
+  UPDATE public.duels
+  SET joiner_stories_viewed = true
+  WHERE id = p_duel_id AND joiner_id = v_user_id;
 END;
 $$;
