@@ -41,6 +41,7 @@ export function QuizStopsTable({
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-24 font-bold text-slate-700">Status</TableHead>
             <TableHead className="w-20 font-bold text-slate-700">Typ</TableHead>
+            <TableHead className="w-24 font-bold text-slate-700">Źródło</TableHead>
             <TableHead className="font-bold text-slate-700">ID (skrót)</TableHead>
             <TableHead className="font-bold text-slate-700">Lokalizacja</TableHead>
             <TableHead className="font-bold text-slate-700 min-w-[200px]">Kategorie</TableHead>
@@ -52,7 +53,7 @@ export function QuizStopsTable({
         <TableBody>
           {stops.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center py-12 text-slate-400">
+              <TableCell colSpan={9} className="text-center py-12 text-slate-400">
                 Brak punktów spełniających kryteria filtrowania.
               </TableCell>
             </TableRow>
@@ -83,6 +84,18 @@ export function QuizStopsTable({
                       }
                     >
                       {stop.type === "premium" ? "PREM" : "NORM"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        stop.generation_source === "auto"
+                          ? "border-cyan-200 bg-cyan-50 text-cyan-700"
+                          : "border-slate-200 bg-white text-slate-600"
+                      }
+                    >
+                      {stop.generation_source === "auto" ? "Auto" : "Manual"}
                     </Badge>
                   </TableCell>
                   <TableCell className="font-mono text-[10px] text-slate-500">

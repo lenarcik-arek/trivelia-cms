@@ -103,6 +103,7 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
   // Filters
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterType, setFilterType] = useState("all");
+  const [filterSource, setFilterSource] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
   const [sortField, setSortField] = useState<"created_at" | "expires_at">("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
@@ -165,6 +166,7 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
     const result = stops.filter((s) => {
       if (filterStatus !== "all" && getStatus(s) !== filterStatus) return false;
       if (filterType !== "all" && s.type !== filterType) return false;
+      if (filterSource !== "all" && s.generation_source !== filterSource) return false;
       if (filterCategory !== "all" && !(s.categories || []).includes(filterCategory))
         return false;
       return true;
@@ -175,7 +177,7 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
       return sortOrder === "desc" ? valB - valA : valA - valB;
     });
     return result;
-  }, [stops, filterStatus, filterType, filterCategory, sortField, sortOrder]);
+  }, [stops, filterStatus, filterType, filterSource, filterCategory, sortField, sortOrder]);
 
   const initialCenter = useMemo<[number, number]>(() => {
     const valid = stops.filter((s) => !isNaN(s.lat) && !isNaN(s.lng));
@@ -250,6 +252,16 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
                       <Badge
                         variant="outline"
                         className={
+                          stop.generation_source === "auto"
+                            ? "border-cyan-200 bg-cyan-50 text-cyan-700"
+                            : "border-slate-200 bg-white text-slate-600"
+                        }
+                      >
+                        {stop.generation_source === "auto" ? "AUTO" : "MANUAL"}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className={
                           getStatus(stop) === "active"
                             ? "text-emerald-600 bg-emerald-50 border-emerald-200"
                             : "text-red-600 bg-red-50 border-red-200"
@@ -294,6 +306,8 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
           onFilterStatusChange={setFilterStatus}
           filterType={filterType}
           onFilterTypeChange={setFilterType}
+          filterSource={filterSource}
+          onFilterSourceChange={setFilterSource}
           filterCategory={filterCategory}
           onFilterCategoryChange={setFilterCategory}
           sortField={sortField}

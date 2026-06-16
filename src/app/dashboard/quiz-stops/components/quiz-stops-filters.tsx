@@ -7,6 +7,8 @@ interface QuizStopsFiltersProps {
   onFilterStatusChange: (val: string) => void;
   filterType: string;
   onFilterTypeChange: (val: string) => void;
+  filterSource: string;
+  onFilterSourceChange: (val: string) => void;
   filterCategory: string;
   onFilterCategoryChange: (val: string) => void;
   sortField: "created_at" | "expires_at";
@@ -26,6 +28,8 @@ export function QuizStopsFilters({
   onFilterStatusChange,
   filterType,
   onFilterTypeChange,
+  filterSource,
+  onFilterSourceChange,
   filterCategory,
   onFilterCategoryChange,
   sortField,
@@ -61,6 +65,19 @@ export function QuizStopsFilters({
           <option value="all">Wszystkie typy</option>
           <option value="normal">Normalny</option>
           <option value="premium">Premium</option>
+        </select>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-slate-500">Źródło</label>
+        <select
+          className={selectClass}
+          value={filterSource}
+          onChange={(e) => onFilterSourceChange(e.target.value)}
+        >
+          <option value="all">Wszystkie źródła</option>
+          <option value="manual">Manual</option>
+          <option value="auto">Auto</option>
         </select>
       </div>
 

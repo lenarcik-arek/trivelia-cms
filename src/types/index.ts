@@ -10,3 +10,6 @@ export type QuizStopStatus = "active" | "inactive";
 
 /** Quiz stop type */
 export type QuizStopType = "normal" | "premium";
+
+/** Quiz stop generation source */
+export type QuizStopGenerationSource = "manual" | "auto";

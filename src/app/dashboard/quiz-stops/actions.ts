@@ -3,14 +3,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { DEFAULT_COIN_BUDGET, DEFAULT_EXPIRY_HOURS } from "@/lib/constants";
-import type { ActionResult } from "@/types";
+import type { ActionResult, QuizStopGenerationSource } from "@/types";
 
 export interface QuizStop {
   id: string;
   type: string;
   categories: string[];
-  location: any;
+  location: unknown;
   coin_budget: number;
+  generation_source: QuizStopGenerationSource;
   expires_at: string;
   created_at: string;
 }
@@ -19,7 +20,7 @@ export async function getQuizStops(): Promise<QuizStop[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("quiz_stops")
-    .select("id, type, categories, location, coin_budget, expires_at, created_at")
+    .select("id, type, categories, location, coin_budget, generation_source, expires_at, created_at")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -60,6 +61,7 @@ export async function createQuizStop(
       categories,
       location: locationPoint,
       coin_budget: DEFAULT_COIN_BUDGET,
+      generation_source: "manual",
       expires_at: expiresAt.toISOString(),
     })
     .select()

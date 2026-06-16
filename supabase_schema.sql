@@ -66,7 +66,7 @@ BEGIN
   -- Default username is the part before @ in the email
   base_username := split_part(NEW.email::text, '@', 1);
   new_username := base_username;
-  
+
   LOOP
     BEGIN
       INSERT INTO public.profiles (id, username, gender)
@@ -109,6 +109,8 @@ CREATE TABLE IF NOT EXISTS public.quiz_stops (
   type text NOT NULL DEFAULT 'normal',
   categories text[] NOT NULL DEFAULT '{}',
   coin_budget integer NOT NULL DEFAULT 20,
+  generation_source text NOT NULL DEFAULT 'manual',
+  generation_cell text,
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT timezone('utc'::text, now())
 );
@@ -121,9 +123,15 @@ DO $$ BEGIN
   ALTER TABLE public.quiz_stops DROP COLUMN IF EXISTS target_gender;
 EXCEPTION WHEN undefined_column THEN END; $$;
 
+-- Migration guards: automatic quiz stop generation metadata
+ALTER TABLE public.quiz_stops ADD COLUMN IF NOT EXISTS generation_source text NOT NULL DEFAULT 'manual';
+ALTER TABLE public.quiz_stops ADD COLUMN IF NOT EXISTS generation_cell text;
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_quiz_stops_creator_id ON public.quiz_stops(creator_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_stops_expires_at ON public.quiz_stops(expires_at);
+CREATE INDEX IF NOT EXISTS idx_quiz_stops_location_gist ON public.quiz_stops USING GIST (location);
+CREATE INDEX IF NOT EXISTS idx_quiz_stops_generation_source ON public.quiz_stops(generation_source, type, expires_at);
 
 -- RLS for quiz_stops
 ALTER TABLE public.quiz_stops ENABLE ROW LEVEL SECURITY;
@@ -136,17 +144,167 @@ CREATE POLICY quiz_stops_all_policy
   USING (true)
   WITH CHECK (true);
 
+-- 4a. RPC helper: ensure_auto_quiz_stops_near
+-- MVP generator without safety-data. It keeps a small shared pool of normal
+-- quiz stops around the current user and relies on short TTL + density limits.
+CREATE OR REPLACE FUNCTION public.ensure_auto_quiz_stops_near(
+  user_lat double precision,
+  user_lng double precision,
+  radius_m double precision DEFAULT 150,
+  movement_bearing_deg double precision DEFAULT NULL
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_user_point geography;
+  v_cell text;
+  v_accessible_count int := 0;
+  v_visible_count int := 0;
+  v_created int := 0;
+  v_target_visible int := 3;
+  v_min_stop_distance_m double precision := 70;
+  v_attempt int := 0;
+  v_max_attempts int := 30;
+  v_distance_m double precision;
+  v_bearing_deg double precision;
+  v_bearing_rad double precision;
+  v_candidate_lat double precision;
+  v_candidate_lng double precision;
+  v_candidate geography;
+  v_categories text[];
+  v_seed_bearing double precision := random() * 360;
+BEGIN
+  IF user_lat IS NULL OR user_lng IS NULL THEN
+    RETURN 0;
+  END IF;
+
+  IF user_lat < -90 OR user_lat > 90 OR user_lng < -180 OR user_lng > 180 THEN
+    RETURN 0;
+  END IF;
+
+  radius_m := LEAST(GREATEST(radius_m, 50), 300);
+  v_user_point := ST_SetSRID(ST_MakePoint(user_lng, user_lat), 4326)::geography;
+  v_cell := floor(user_lat * 1000)::text || ':' || floor(user_lng * 1000)::text;
+
+  -- Prevent duplicate generation when many users load the same area at once.
+  PERFORM pg_advisory_xact_lock(hashtext(v_cell));
+
+  SELECT count(*) INTO v_accessible_count
+  FROM public.quiz_stops qs
+  WHERE qs.expires_at > now()
+    AND qs.coin_budget > 0
+    AND ST_DWithin(qs.location, v_user_point, 50);
+
+  SELECT count(*) INTO v_visible_count
+  FROM public.quiz_stops qs
+  WHERE qs.expires_at > now()
+    AND qs.coin_budget > 0
+    AND ST_DWithin(qs.location, v_user_point, radius_m);
+
+  IF v_accessible_count > 0 AND v_visible_count >= v_target_visible THEN
+    RETURN 0;
+  END IF;
+
+  SELECT array_agg(name) INTO v_categories
+  FROM (
+    SELECT c.name
+    FROM public.categories c
+    WHERE COALESCE(c.is_premium, false) = false
+      AND EXISTS (
+        SELECT 1
+        FROM public.questions q
+        WHERE q.category_name = c.name
+      )
+    ORDER BY random()
+    LIMIT 3
+  ) picked;
+
+  IF v_categories IS NULL OR array_length(v_categories, 1) = 0 THEN
+    RETURN 0;
+  END IF;
+
+  WHILE (v_accessible_count = 0 OR v_visible_count < v_target_visible) AND v_attempt < v_max_attempts LOOP
+    v_attempt := v_attempt + 1;
+
+    IF v_accessible_count = 0 THEN
+      v_distance_m := 25 + random() * 20;
+      v_bearing_deg := random() * 360;
+    ELSE
+      v_distance_m := LEAST(80 + random() * GREATEST(radius_m - 80, 1), radius_m);
+
+      IF movement_bearing_deg IS NULL THEN
+        v_bearing_deg := v_seed_bearing + (v_created * 120) + (random() * 40 - 20);
+      ELSE
+        v_bearing_deg := movement_bearing_deg + (random() * 90 - 45);
+      END IF;
+    END IF;
+
+    v_bearing_rad := radians(mod((v_bearing_deg + 360)::numeric, 360)::double precision);
+    v_candidate_lat := user_lat + (cos(v_bearing_rad) * v_distance_m / 110540);
+    v_candidate_lng := user_lng + (sin(v_bearing_rad) * v_distance_m / (111320 * GREATEST(cos(radians(user_lat)), 0.01)));
+    v_candidate := ST_SetSRID(ST_MakePoint(v_candidate_lng, v_candidate_lat), 4326)::geography;
+
+    IF EXISTS (
+      SELECT 1
+      FROM public.quiz_stops qs
+      WHERE qs.expires_at > now()
+        AND qs.coin_budget > 0
+        AND ST_DWithin(qs.location, v_candidate, v_min_stop_distance_m)
+    ) THEN
+      CONTINUE;
+    END IF;
+
+    INSERT INTO public.quiz_stops (
+      location,
+      type,
+      categories,
+      coin_budget,
+      generation_source,
+      generation_cell,
+      expires_at
+    )
+    VALUES (
+      v_candidate,
+      'normal',
+      v_categories,
+      20,
+      'auto',
+      v_cell,
+      now() + interval '6 hours'
+    );
+
+    v_created := v_created + 1;
+    v_visible_count := v_visible_count + 1;
+    IF v_accessible_count = 0 AND ST_DWithin(v_candidate, v_user_point, 50) THEN
+      v_accessible_count := 1;
+    END IF;
+  END LOOP;
+
+  RETURN v_created;
+END;
+$$;
+
 -- 5. RPC: get_nearby_quiz_stops (spatial query)
 CREATE OR REPLACE FUNCTION public.get_nearby_quiz_stops(
   user_lat double precision,
   user_lng double precision,
-  radius_m double precision DEFAULT 500
+  radius_m double precision DEFAULT 150,
+  movement_bearing_deg double precision DEFAULT NULL
 )
 RETURNS SETOF json
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
+  PERFORM public.ensure_auto_quiz_stops_near(
+    user_lat,
+    user_lng,
+    radius_m,
+    movement_bearing_deg
+  );
+
   RETURN QUERY
   SELECT json_build_object(
     'id', qs.id,
@@ -154,10 +312,12 @@ BEGIN
     'type', qs.type,
     'categories', qs.categories,
     'coin_budget', qs.coin_budget,
+    'generation_source', COALESCE(qs.generation_source, 'manual'),
     'is_premium', qs.is_premium
   )
   FROM public.quiz_stops qs
   WHERE qs.expires_at > now()
+    AND qs.coin_budget > 0
     AND ST_DWithin(
       qs.location,
       ST_SetSRID(ST_MakePoint(user_lng, user_lat), 4326)::geography,
@@ -165,7 +325,7 @@ BEGIN
     )
     -- Hide stops the user already played at
     AND NOT EXISTS (
-      SELECT 1 FROM public.user_played_quizzes upq 
+      SELECT 1 FROM public.user_played_quizzes upq
       WHERE upq.quiz_stop_id = qs.id AND upq.user_id = auth.uid()
     )
     -- Hide stops where ALL categories have 0 unplayed questions globally
@@ -473,7 +633,7 @@ BEGIN
 
     -- If user has participated in ANY quiz/duel at this stop, all categories are exhausted
     IF EXISTS (
-      SELECT 1 FROM public.user_played_quizzes 
+      SELECT 1 FROM public.user_played_quizzes
       WHERE user_id = v_user_id AND quiz_stop_id = p_stop_id
     ) THEN
       v_unplayed_count := 0;
@@ -883,10 +1043,10 @@ BEGIN
 
   -- Check for existing waiting duel in this category and this stop
   IF EXISTS (
-    SELECT 1 FROM public.duels 
-    WHERE quiz_stop_id = p_stop_id 
-      AND category_name = p_category 
-      AND status = 'waiting' 
+    SELECT 1 FROM public.duels
+    WHERE quiz_stop_id = p_stop_id
+      AND category_name = p_category
+      AND status = 'waiting'
       AND expires_at > now()
   ) THEN
     RAISE EXCEPTION 'An active duel already exists for this category at this stop.';

@@ -56,6 +56,19 @@ src/
 - **Location:** Automatic conversion of PostGIS `POINT` formats to `{lat, lng}`.
 - **Statuses:** Dynamic status calculation (Active/Inactive) based on coin budget and expiration date.
 - **Filtering:** Advanced filters by type (Normal/Premium), category, and status, integrated with the table and map.
+- **Generation Source:** Each point is marked as `manual` or `auto` and is visible in CMS filters and tables.
+
+### 1a. Automatic Quiz Stop Generation (MVP)
+- **Shared Pool:** Auto-generated quiz stops are shared by all users in the area. The system does not create private per-user stops.
+- **Trigger:** `get_nearby_quiz_stops` lazily calls `ensure_auto_quiz_stops_near` before returning map markers.
+- **Visibility Radius:** Mobile map requests use a 150 m visibility radius. The quiz access radius remains 50 m and is validated by `start_quiz_session`.
+- **Density Limits:** The MVP targets up to 3 active stops within the visibility radius and at least 1 stop within the access radius when generation is geometrically possible.
+- **Movement Direction:** The RPC accepts optional `movement_bearing_deg`. When provided, new visible stops are preferred in the user movement cone (`bearing +/- 45°`). Without bearing, stops are distributed around the user.
+- **Type:** MVP auto-generation creates only `normal` quiz stops.
+- **TTL:** Auto-generated quiz stops expire after 6 hours to keep the map clean.
+- **Privacy:** User location is used only for the current RPC call and is not stored.
+- **Safety Data:** MVP does not use safety/POI layers. This is a test-only limitation. Future production generation must validate candidates against blocked areas such as water, high-speed roads, military areas, airports, strategic infrastructure, rail infrastructure, restricted/private areas, hazardous industrial areas, construction sites, and naturally dangerous terrain when data is available.
+- **Performance:** `quiz_stops.location` must have a GiST index for `ST_DWithin` queries. Generation is protected by an advisory transaction lock per map cell to reduce duplicate stop creation under concurrent requests.
 
 ### 2. Data Handling (Server Actions)
 - **Optimistic Updates:** Adding and removing elements (categories, questions, points) happens instantly in the UI without page reload (`window.location.reload` removed).
@@ -77,9 +90,11 @@ src/
 - [x] **Category System:** Management of category pool for "Normal" points.
 - [x] **UI/UX Polish:** New font (Plus Jakarta Sans), Toasts (Sonner), responsive navigation.
 - [x] **Build Production:** Full TS type compatibility and successful Next.js 16 build.
+- [x] **Auto Quiz Stops MVP:** Shared lazy generation of normal quiz stops near users with 150 m visibility, 50 m access, short TTL, and CMS source labeling.
 
 ### Backlog
 - [ ] **Element Editing:** Edit form for existing points and questions.
 - [ ] **User Management:** Player list, statistics (coin pool, solved quizzes).
 - [ ] **Notifications:** Ability to send announcements to the mobile app.
+- [ ] **Safety-Aware Generation:** Validate auto-generated candidates against map safety/POI data before public rollout.
 - [ ] **Deployment:** Production hosting for frontend and database.
