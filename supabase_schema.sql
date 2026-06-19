@@ -1103,8 +1103,12 @@ DECLARE
   v_duel_id uuid;
   v_expires_at timestamptz;
 BEGIN
-  -- Fetch stop and validate
-  SELECT * INTO v_stop FROM public.quiz_stops WHERE id = p_stop_id AND expires_at > now();
+  -- Lock the stop so its expiration can be reset atomically with duel creation.
+  SELECT * INTO v_stop
+  FROM public.quiz_stops
+  WHERE id = p_stop_id
+    AND expires_at > now()
+  FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Quiz stop does not exist or has expired.';
   END IF;
@@ -1176,9 +1180,18 @@ BEGIN
   SET quizzes_played = quizzes_played + 3
   WHERE id = v_user_id;
 
-  v_expires_at := v_stop.expires_at;
+  -- Reset the normal stop to its full source-specific lifetime.
+  IF COALESCE(v_stop.generation_source, 'manual') = 'auto' THEN
+    v_expires_at := now() + interval '6 hours';
+  ELSE
+    v_expires_at := now() + interval '24 hours';
+  END IF;
 
-  -- A waiting duel must never outlive its quiz stop.
+  UPDATE public.quiz_stops
+  SET expires_at = v_expires_at
+  WHERE id = p_stop_id;
+
+  -- Keep the waiting duel synchronized with its quiz stop.
   INSERT INTO public.duels (quiz_stop_id, category_name, initiator_id, status, questions, expires_at)
   VALUES (p_stop_id, p_category, v_user_id, 'waiting', v_questions::jsonb, v_expires_at)
   RETURNING id INTO v_duel_id;

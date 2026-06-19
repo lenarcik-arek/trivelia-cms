@@ -79,7 +79,7 @@ src/
 - **Typing:** All actions return a unified `ActionResult<T>` type.
 
 ### 2a. Duel Expiration
-- Creating a duel does not extend the normal quiz stop; the waiting duel inherits the stop's `expires_at`.
+- Creating a duel resets the normal quiz stop to its full source-specific lifetime: `now() + 6 hours` for auto-generated stops and `now() + 24 hours` for manual stops. The waiting duel receives the same `expires_at`.
 - Joining a waiting duel atomically sets both the stop and duel expiration to `GREATEST(current_stop_expiration, now() + 2 minutes)`.
 - An expired stop cannot be revived by joining, and a duel must never remain active longer than its quiz stop.
 
