@@ -27,7 +27,7 @@ test("usuwa starą 3-parametrową sygnaturę get_nearby_quiz_stops", () => {
   );
 });
 
-test("nie ukrywa pobliskich quiz stopów na podstawie budżetu lub puli pytań", () => {
+test("ukrywa zwykły quiz stop dopiero po wyczerpaniu pytań ze wszystkich kategorii", () => {
   const rpcStart = schema.indexOf(
     "CREATE OR REPLACE FUNCTION public.get_nearby_quiz_stops("
   );
@@ -43,9 +43,37 @@ test("nie ukrywa pobliskich quiz stopów na podstawie budżetu lub puli pytań",
     /qs\.coin_budget\s*>\s*0/,
     "Budżet wpływa na nagrody, ale nie może usuwać markera z mapy."
   );
-  assert.doesNotMatch(
+  assert.match(
     rpc,
-    /unnest\(qs\.categories\)/,
-    "Dostępność pytań jest prezentowana po wejściu w stop i nie może usuwać markera z mapy."
+    /qs\.type\s*<>\s*'normal'[\s\S]*unnest\(qs\.categories\)[\s\S]*NOT EXISTS[\s\S]*upq\.user_id = auth\.uid\(\)[\s\S]*upq\.question_id = q\.id/,
+    "Zwykły stop musi pozostać widoczny, jeśli ma choć jedno nieograne pytanie w przypisanych kategoriach."
+  );
+});
+
+test("generator liczy i wybiera tylko stopy dostępne dla bieżącego użytkownika", () => {
+  const generatorStart = schema.indexOf(
+    "CREATE OR REPLACE FUNCTION public.ensure_auto_quiz_stops_near("
+  );
+  const generatorEnd = schema.indexOf(
+    "-- 5. RPC: get_nearby_quiz_stops",
+    generatorStart
+  );
+  const generator = schema.slice(generatorStart, generatorEnd);
+
+  assert.ok(generatorStart >= 0 && generatorEnd > generatorStart);
+  assert.match(
+    generator,
+    /unnest\(qs\.categories\)[\s\S]*upq\.user_id = auth\.uid\(\)[\s\S]*upq\.question_id = q\.id/,
+    "Wyczerpane stopy nie mogą blokować wygenerowania dostępnego stopu."
+  );
+  assert.match(
+    generator,
+    /upq\.quiz_stop_id = qs\.id[\s\S]*upq\.user_id = auth\.uid\(\)/,
+    "Stopy już rozegrane przez użytkownika nie mogą być liczone jako dostępne."
+  );
+  assert.match(
+    generator,
+    /q\.category_name = c\.name[\s\S]*upq\.user_id = auth\.uid\(\)[\s\S]*upq\.question_id = q\.id/,
+    "Kategorie automatycznego stopu muszą zawierać pytania nieograne przez bieżącego użytkownika."
   );
 });

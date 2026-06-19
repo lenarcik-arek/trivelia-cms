@@ -195,13 +195,53 @@ BEGIN
   FROM public.quiz_stops qs
   WHERE qs.expires_at > now()
     AND qs.coin_budget > 0
-    AND ST_DWithin(qs.location, v_user_point, 50);
+    AND ST_DWithin(qs.location, v_user_point, 50)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.user_played_quizzes upq
+      WHERE upq.quiz_stop_id = qs.id
+        AND upq.user_id = auth.uid()
+    )
+    AND (
+      qs.type <> 'normal'
+      OR EXISTS (
+        SELECT 1
+        FROM unnest(qs.categories) AS stop_category(name)
+        JOIN public.questions q ON q.category_name = stop_category.name
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM public.user_played_quizzes upq
+          WHERE upq.user_id = auth.uid()
+            AND upq.question_id = q.id
+        )
+      )
+    );
 
   SELECT count(*) INTO v_visible_count
   FROM public.quiz_stops qs
   WHERE qs.expires_at > now()
     AND qs.coin_budget > 0
-    AND ST_DWithin(qs.location, v_user_point, radius_m);
+    AND ST_DWithin(qs.location, v_user_point, radius_m)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.user_played_quizzes upq
+      WHERE upq.quiz_stop_id = qs.id
+        AND upq.user_id = auth.uid()
+    )
+    AND (
+      qs.type <> 'normal'
+      OR EXISTS (
+        SELECT 1
+        FROM unnest(qs.categories) AS stop_category(name)
+        JOIN public.questions q ON q.category_name = stop_category.name
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM public.user_played_quizzes upq
+          WHERE upq.user_id = auth.uid()
+            AND upq.question_id = q.id
+        )
+      )
+    );
 
   IF v_accessible_count > 0 AND v_visible_count >= v_target_visible THEN
     RETURN 0;
@@ -216,6 +256,12 @@ BEGIN
         SELECT 1
         FROM public.questions q
         WHERE q.category_name = c.name
+          AND NOT EXISTS (
+            SELECT 1
+            FROM public.user_played_quizzes upq
+            WHERE upq.user_id = auth.uid()
+              AND upq.question_id = q.id
+          )
       )
     ORDER BY random()
     LIMIT 3
@@ -252,6 +298,26 @@ BEGIN
       WHERE qs.expires_at > now()
         AND qs.coin_budget > 0
         AND ST_DWithin(qs.location, v_candidate, v_min_stop_distance_m)
+        AND NOT EXISTS (
+          SELECT 1
+          FROM public.user_played_quizzes upq
+          WHERE upq.quiz_stop_id = qs.id
+            AND upq.user_id = auth.uid()
+        )
+        AND (
+          qs.type <> 'normal'
+          OR EXISTS (
+            SELECT 1
+            FROM unnest(qs.categories) AS stop_category(name)
+            JOIN public.questions q ON q.category_name = stop_category.name
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM public.user_played_quizzes upq
+              WHERE upq.user_id = auth.uid()
+                AND upq.question_id = q.id
+            )
+          )
+        )
     ) THEN
       CONTINUE;
     END IF;
@@ -330,6 +396,22 @@ BEGIN
     AND NOT EXISTS (
       SELECT 1 FROM public.user_played_quizzes upq
       WHERE upq.quiz_stop_id = qs.id AND upq.user_id = auth.uid()
+    )
+    -- Normal stops stay visible only while at least one assigned category
+    -- contains a question the current user has not played anywhere yet.
+    AND (
+      qs.type <> 'normal'
+      OR EXISTS (
+        SELECT 1
+        FROM unnest(qs.categories) AS stop_category(name)
+        JOIN public.questions q ON q.category_name = stop_category.name
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM public.user_played_quizzes upq
+          WHERE upq.user_id = auth.uid()
+            AND upq.question_id = q.id
+        )
+      )
     );
 END;
 $$;
