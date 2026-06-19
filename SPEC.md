@@ -61,6 +61,8 @@ src/
 ### 1a. Automatic Quiz Stop Generation (MVP)
 - **Shared Pool:** Auto-generated quiz stops are shared by all users in the area. The system does not create private per-user stops.
 - **Trigger:** `get_nearby_quiz_stops` lazily calls `ensure_auto_quiz_stops_near` before returning map markers.
+- **RPC Compatibility:** The legacy 3-argument `get_nearby_quiz_stops` overload must be dropped before creating the 4-argument version with optional `movement_bearing_deg`; otherwise PostgREST cannot resolve mobile calls that pass 3 arguments.
+- **Marker Visibility:** Nearby, non-expired stops remain visible regardless of coin budget or current question availability. The RPC excludes only stops already played by the current user; reward and category availability are handled when the user opens or starts a stop.
 - **Visibility Radius:** Mobile map requests use a 150 m visibility radius. The quiz access radius remains 50 m and is validated by `start_quiz_session`.
 - **Density Limits:** The MVP targets up to 3 active stops within the visibility radius and at least 1 stop within the access radius when generation is geometrically possible.
 - **Movement Direction:** The RPC accepts optional `movement_bearing_deg`. When provided, new visible stops are preferred in the user movement cone (`bearing +/- 45°`). Without bearing, stops are distributed around the user.

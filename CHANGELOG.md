@@ -2,6 +2,11 @@
 
 Wszystkie istotne zmiany w projekcie będą odnotowywane w tym pliku.
 
+## [Unreleased] - 2026-06-19
+### Fixed
+- Przywrócono widoczność ręcznych i automatycznych quiz stopów w aplikacji mobilnej: `get_nearby_quiz_stops` nie ukrywa już markerów na podstawie budżetu monet ani globalnej dostępności nieogranych pytań.
+- Zabezpieczono migrację RPC przed pozostawieniem starej, 3-parametrowej sygnatury `get_nearby_quiz_stops`.
+
 ## [Unreleased] - 2026-06-16
 ### Added
 - Dodano MVP automatycznego generowania wspólnych quiz stopów (`generation_source = auto`) w pobliżu gracza, z promieniem widoczności 150 m, zasięgiem dostępności 50 m, TTL 6h i limitami zagęszczenia.

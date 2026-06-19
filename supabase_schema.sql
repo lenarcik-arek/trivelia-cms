@@ -287,6 +287,10 @@ END;
 $$;
 
 -- 5. RPC: get_nearby_quiz_stops (spatial query)
+-- Adding an optional fourth argument creates a separate PostgreSQL overload.
+-- Remove the legacy overload first so 3-argument PostgREST calls stay unambiguous.
+DROP FUNCTION IF EXISTS public.get_nearby_quiz_stops(double precision, double precision, double precision);
+
 CREATE OR REPLACE FUNCTION public.get_nearby_quiz_stops(
   user_lat double precision,
   user_lng double precision,
@@ -317,7 +321,6 @@ BEGIN
   )
   FROM public.quiz_stops qs
   WHERE qs.expires_at > now()
-    AND qs.coin_budget > 0
     AND ST_DWithin(
       qs.location,
       ST_SetSRID(ST_MakePoint(user_lng, user_lat), 4326)::geography,
@@ -327,15 +330,6 @@ BEGIN
     AND NOT EXISTS (
       SELECT 1 FROM public.user_played_quizzes upq
       WHERE upq.quiz_stop_id = qs.id AND upq.user_id = auth.uid()
-    )
-    -- Hide stops where ALL categories have 0 unplayed questions globally
-    AND EXISTS (
-      SELECT 1 FROM unnest(qs.categories) AS cat
-      WHERE EXISTS (
-        SELECT 1 FROM public.questions q
-        WHERE q.category_name = cat
-          AND q.id NOT IN (SELECT question_id FROM public.user_played_quizzes WHERE user_id = auth.uid())
-      )
     );
 END;
 $$;
