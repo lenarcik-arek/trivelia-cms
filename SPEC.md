@@ -54,7 +54,7 @@ src/
 ### 1. Point Management (Quiz Stops)
 - **Map:** Uses Leaflet with point clustering (`react-leaflet-cluster`).
 - **Location:** Automatic conversion of PostGIS `POINT` formats to `{lat, lng}`.
-- **Statuses:** Dynamic status calculation (Active/Inactive) based on coin budget and expiration date.
+- **Statuses:** Dynamic status calculation based on expiration for normal stops and expiration plus coin budget for premium stops.
 - **Filtering:** Advanced filters by type (Normal/Premium), category, and status, integrated with the table and map.
 - **Generation Source:** Each point is marked as `manual` or `auto` and is visible in CMS filters and tables.
 
@@ -64,6 +64,7 @@ src/
 - **RPC Compatibility:** The legacy 3-argument `get_nearby_quiz_stops` overload must be dropped before creating the 4-argument version with optional `movement_bearing_deg`; otherwise PostgREST cannot resolve mobile calls that pass 3 arguments.
 - **Marker Visibility:** A nearby, non-expired normal stop is visible only when at least one of its assigned categories contains a question not yet played by the current user. Premium stops are not affected by this normal-stop rule. Coin budget does not control marker visibility.
 - **User-Aware Generation:** Auto-generation counts only stops that are usable by the current user and selects categories containing at least one question that user has not played.
+- **Reward Budget:** Normal stops have unlimited normal-coin rewards and ignore `coin_budget` (`0` is stored as a compatibility sentinel). Premium stops retain an atomic, limited campaign budget.
 - **Visibility Radius:** Mobile map requests use a 150 m visibility radius. The quiz access radius remains 50 m and is validated by `start_quiz_session`.
 - **Density Limits:** The MVP targets up to 3 active stops within the visibility radius and at least 1 stop within the access radius when generation is geometrically possible.
 - **Movement Direction:** The RPC accepts optional `movement_bearing_deg`. When provided, new visible stops are preferred in the user movement cone (`bearing +/- 45°`). Without bearing, stops are distributed around the user.

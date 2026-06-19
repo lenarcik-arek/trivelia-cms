@@ -47,7 +47,7 @@ interface ParsedQuizStop extends QuizStop {
 // ── Helpers ───────────────────────────────────────────────────────────
 function getStatus(stop: QuizStop): QuizStopStatus {
   const isExpired = new Date(stop.expires_at) < new Date();
-  const isOutOfCoins = stop.coin_budget <= 0;
+  const isOutOfCoins = stop.type === "premium" && stop.coin_budget <= 0;
   return isExpired || isOutOfCoins ? "inactive" : "active";
 }
 
@@ -275,7 +275,8 @@ export default function QuizStopsMap({ initialStops }: QuizStopsMapProps) {
                         <b>📦 Kategorie:</b> {stop.categories?.join(", ") || "Brak"}
                       </div>
                       <div>
-                        <b>🪙 Budżet:</b> {stop.coin_budget} monet
+                        <b>🪙 Budżet:</b>{" "}
+                        {stop.type === "normal" ? "Bez limitu" : `${stop.coin_budget} monet`}
                       </div>
                       <div>
                         <b>🕒 Wygasa:</b> {new Date(stop.expires_at).toLocaleString()}

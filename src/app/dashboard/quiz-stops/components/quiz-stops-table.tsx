@@ -122,8 +122,12 @@ export function QuizStopsTable({
                   </TableCell>
                   <TableCell className="text-xs">
                     <div className="flex items-center gap-1">
-                      <span className="font-bold text-slate-700">{stop.coin_budget}</span>
-                      <span className="text-slate-400">/ 20</span>
+                      <span className="font-bold text-slate-700">
+                        {stop.type === "normal" ? "Bez limitu" : stop.coin_budget}
+                      </span>
+                      {stop.type === "premium" && (
+                        <span className="text-slate-400">/ 20</span>
+                      )}
                       <span className="text-amber-500">🪙</span>
                     </div>
                   </TableCell>

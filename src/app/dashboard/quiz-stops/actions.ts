@@ -60,7 +60,7 @@ export async function createQuizStop(
       type,
       categories,
       location: locationPoint,
-      coin_budget: DEFAULT_COIN_BUDGET,
+      coin_budget: type === "premium" ? DEFAULT_COIN_BUDGET : 0,
       generation_source: "manual",
       expires_at: expiresAt.toISOString(),
     })

@@ -126,6 +126,8 @@ EXCEPTION WHEN undefined_column THEN END; $$;
 -- Migration guards: automatic quiz stop generation metadata
 ALTER TABLE public.quiz_stops ADD COLUMN IF NOT EXISTS generation_source text NOT NULL DEFAULT 'manual';
 ALTER TABLE public.quiz_stops ADD COLUMN IF NOT EXISTS generation_cell text;
+-- Normal stops have unlimited rewards; 0 is a compatibility sentinel.
+UPDATE public.quiz_stops SET coin_budget = 0 WHERE type = 'normal' AND coin_budget <> 0;
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_quiz_stops_creator_id ON public.quiz_stops(creator_id);
@@ -194,7 +196,7 @@ BEGIN
   SELECT count(*) INTO v_accessible_count
   FROM public.quiz_stops qs
   WHERE qs.expires_at > now()
-    AND qs.coin_budget > 0
+    AND (qs.type = 'normal' OR qs.coin_budget > 0)
     AND ST_DWithin(qs.location, v_user_point, 50)
     AND NOT EXISTS (
       SELECT 1
@@ -220,7 +222,7 @@ BEGIN
   SELECT count(*) INTO v_visible_count
   FROM public.quiz_stops qs
   WHERE qs.expires_at > now()
-    AND qs.coin_budget > 0
+    AND (qs.type = 'normal' OR qs.coin_budget > 0)
     AND ST_DWithin(qs.location, v_user_point, radius_m)
     AND NOT EXISTS (
       SELECT 1
@@ -296,7 +298,7 @@ BEGIN
       SELECT 1
       FROM public.quiz_stops qs
       WHERE qs.expires_at > now()
-        AND qs.coin_budget > 0
+        AND (qs.type = 'normal' OR qs.coin_budget > 0)
         AND ST_DWithin(qs.location, v_candidate, v_min_stop_distance_m)
         AND NOT EXISTS (
           SELECT 1
@@ -335,7 +337,7 @@ BEGIN
       v_candidate,
       'normal',
       v_categories,
-      20,
+      0,
       'auto',
       v_cell,
       now() + interval '6 hours'
@@ -504,19 +506,28 @@ BEGIN
 
   xp_to_award := 1;
 
-  -- Determine if this category is premium
-  SELECT COALESCE(c.is_premium, false) INTO v_is_premium
-  FROM public.categories c
-  WHERE c.name = v_category_name;
+  SELECT * INTO stop_record
+  FROM public.quiz_stops
+  WHERE id = p_stop_id;
 
-  -- Atomic decrement of coin_budget if available
-  UPDATE public.quiz_stops
-  SET coin_budget = coin_budget - 1
-  WHERE id = p_stop_id AND coin_budget > 0
-  RETURNING * INTO stop_record;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Quiz Stop does not exist.';
+  END IF;
 
-  IF FOUND THEN
+  v_is_premium := stop_record.type = 'premium';
+
+  IF stop_record.type = 'normal' THEN
     coins_to_award := 1;
+  ELSIF stop_record.type = 'premium' THEN
+    -- Premium rewards remain limited by the campaign budget.
+    UPDATE public.quiz_stops
+    SET coin_budget = coin_budget - 1
+    WHERE id = p_stop_id AND coin_budget > 0
+    RETURNING * INTO stop_record;
+
+    IF FOUND THEN
+      coins_to_award := 1;
+    END IF;
   END IF;
 
   -- Always update global XP
@@ -1447,7 +1458,6 @@ BEGIN
       INSERT INTO public.user_category_xp (user_id, category_name, xp)
       VALUES (v_duel.initiator_id, v_duel.category_name, v_init_correct)
       ON CONFLICT (user_id, category_name) DO UPDATE SET xp = public.user_category_xp.xp + v_init_correct;
-      UPDATE public.quiz_stops SET coin_budget = coin_budget - v_init_correct WHERE id = v_duel.quiz_stop_id;
     END IF;
 
     UPDATE public.duels SET status = 'expired' WHERE id = p_duel_id;
@@ -1525,7 +1535,6 @@ BEGIN
       INSERT INTO public.user_category_xp (user_id, category_name, xp)
       VALUES (v_duel.initiator_id, v_duel.category_name, 5)
       ON CONFLICT (user_id, category_name) DO UPDATE SET xp = public.user_category_xp.xp + 5;
-      UPDATE public.quiz_stops SET coin_budget = coin_budget - 5 WHERE id = v_duel.quiz_stop_id;
 
       UPDATE public.duels SET status = 'completed' WHERE id = p_duel_id;
       RETURN json_build_object(
@@ -1577,7 +1586,6 @@ BEGIN
       INSERT INTO public.user_category_xp (user_id, category_name, xp)
       VALUES (v_duel.joiner_id, v_duel.category_name, 5)
       ON CONFLICT (user_id, category_name) DO UPDATE SET xp = public.user_category_xp.xp + 5;
-      UPDATE public.quiz_stops SET coin_budget = coin_budget - 5 WHERE id = v_duel.quiz_stop_id;
 
       UPDATE public.duels SET status = 'completed' WHERE id = p_duel_id;
       RETURN json_build_object(
@@ -1648,7 +1656,6 @@ BEGIN
       VALUES (v_duel.joiner_id, v_duel.category_name, v_join_correct)
       ON CONFLICT (user_id, category_name) DO UPDATE SET xp = public.user_category_xp.xp + v_join_correct;
     END IF;
-    UPDATE public.quiz_stops SET coin_budget = coin_budget - (v_init_correct + v_join_correct) WHERE id = v_duel.quiz_stop_id;
   ELSE
     v_winner_xp := 5;
     v_winner_coins := 5;
@@ -1660,7 +1667,6 @@ BEGIN
     VALUES (v_winner_id, v_duel.category_name, 5)
     ON CONFLICT (user_id, category_name) DO UPDATE SET xp = public.user_category_xp.xp + 5;
 
-    UPDATE public.quiz_stops SET coin_budget = coin_budget - 5 WHERE id = v_duel.quiz_stop_id;
   END IF;
 
   UPDATE public.duels SET status = 'completed' WHERE id = p_duel_id;
