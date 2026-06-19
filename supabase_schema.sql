@@ -1178,12 +1178,7 @@ BEGIN
 
   v_expires_at := v_stop.expires_at;
 
-  -- Extend expiration by 2 hours if quiz stop expires in less than 1 hour
-  IF v_expires_at < now() + interval '1 hour' THEN
-    v_expires_at := v_expires_at + interval '2 hours';
-  END IF;
-
-  -- Create the duel
+  -- A waiting duel must never outlive its quiz stop.
   INSERT INTO public.duels (quiz_stop_id, category_name, initiator_id, status, questions, expires_at)
   VALUES (p_stop_id, p_category, v_user_id, 'waiting', v_questions::jsonb, v_expires_at)
   RETURNING id INTO v_duel_id;
@@ -1230,9 +1225,16 @@ DECLARE
   v_question_ids uuid[];
   v_already_played int;
   v_clean_questions json;
+  v_expires_at timestamptz;
 BEGIN
-  -- Fetch duel
-  SELECT * INTO v_duel FROM public.duels WHERE id = p_duel_id AND status = 'waiting' AND expires_at > now();
+  -- Lock the waiting duel so only one player can join.
+  SELECT * INTO v_duel
+  FROM public.duels
+  WHERE id = p_duel_id
+    AND status = 'waiting'
+    AND expires_at > now()
+  FOR UPDATE;
+
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Duel not found, already accepted, or expired.';
   END IF;
@@ -1247,8 +1249,16 @@ BEGIN
     RAISE EXCEPTION 'You have already played at this quiz stop.';
   END IF;
 
-  -- Fetch stop for proximity check
-  SELECT * INTO v_stop FROM public.quiz_stops WHERE id = v_duel.quiz_stop_id;
+  -- Lock and validate the stop. An expired stop cannot be revived by joining.
+  SELECT * INTO v_stop
+  FROM public.quiz_stops
+  WHERE id = v_duel.quiz_stop_id
+    AND expires_at > now()
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Quiz stop does not exist or has expired.';
+  END IF;
 
   v_dist := ST_Distance(
     v_stop.location,
@@ -1272,6 +1282,14 @@ BEGIN
     RAISE EXCEPTION 'You have already played some of the duel questions.';
   END IF;
 
+  -- Joining guarantees at least 2 minutes to finish. Keep the stop and duel
+  -- synchronized so the duel can never remain active after the stop expires.
+  v_expires_at := GREATEST(v_stop.expires_at, now() + interval '2 minutes');
+
+  UPDATE public.quiz_stops
+  SET expires_at = v_expires_at
+  WHERE id = v_duel.quiz_stop_id;
+
   -- Record all 3 questions as played for the joiner
   INSERT INTO public.user_played_quizzes (user_id, question_id, quiz_stop_id, is_correct)
   SELECT v_user_id, unnest(v_question_ids), v_duel.quiz_stop_id, false
@@ -1284,7 +1302,9 @@ BEGIN
 
   -- Update duel status
   UPDATE public.duels
-  SET joiner_id = v_user_id, status = 'in_progress'
+  SET joiner_id = v_user_id,
+      status = 'in_progress',
+      expires_at = v_expires_at
   WHERE id = p_duel_id;
 
   -- Build clean questions (strip is_correct)
@@ -1304,7 +1324,7 @@ BEGIN
     'duelId', p_duel_id,
     'status', 'in_progress',
     'categoryName', v_duel.category_name,
-    'expiresAt', v_duel.expires_at,
+    'expiresAt', v_expires_at,
     'questions', v_clean_questions
   );
 END;

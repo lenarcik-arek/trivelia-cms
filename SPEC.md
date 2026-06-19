@@ -78,6 +78,11 @@ src/
 - **Optimistic Updates:** Adding and removing elements (categories, questions, points) happens instantly in the UI without page reload (`window.location.reload` removed).
 - **Typing:** All actions return a unified `ActionResult<T>` type.
 
+### 2a. Duel Expiration
+- Creating a duel does not extend the normal quiz stop; the waiting duel inherits the stop's `expires_at`.
+- Joining a waiting duel atomically sets both the stop and duel expiration to `GREATEST(current_stop_expiration, now() + 2 minutes)`.
+- An expired stop cannot be revived by joining, and a duel must never remain active longer than its quiz stop.
+
 ### 3. Security and Auth
 - **Session Takeover (Mobile):** To prevent simultaneous logins on multiple devices, a "Session Takeover" mechanism is implemented. Upon successful login, the mobile app checks the `active_device_id` in `public.profiles`. If a different device is active, the user is prompted to take over the session. Proceeding will overwrite `active_device_id` and call `supabase.auth.signOut({ scope: 'others' })` to invalidate tokens on the old device.
 - **Proxy Boundary:** Moved logic from `middleware.ts` to `proxy.ts` according to Next.js 16 standards.

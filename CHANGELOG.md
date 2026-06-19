@@ -8,6 +8,7 @@ Wszystkie istotne zmiany w projekcie będą odnotowywane w tym pliku.
 - Zabezpieczono migrację RPC przed pozostawieniem starej, 3-parametrowej sygnatury `get_nearby_quiz_stops`.
 - Zwykły quiz stop jest ukrywany użytkownikowi dopiero wtedy, gdy we wszystkich przypisanych kategoriach nie pozostało żadne nieograne przez niego pytanie; generator pomija takie stopy i dobiera dostępne kategorie.
 - Usunięto limit `coin_budget` ze zwykłych quiz stopów. Zwykłe quizy i pojedynki zawsze wypłacają należne normalne monety, a ograniczony budżet pozostaje wyłącznie dla stopów premium.
+- Zsynchronizowano wygaśnięcie pojedynku i quiz stopu: utworzenie pojedynku nie wydłuża stopu, a dołączenie zapewnia obu minimum 2 minuty życia w atomowej aktualizacji.
 
 ## [Unreleased] - 2026-06-16
 ### Added
