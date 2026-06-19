@@ -4,6 +4,8 @@ Wszystkie istotne zmiany w projekcie będą odnotowywane w tym pliku.
 
 ## [Unreleased] - 2026-06-19
 ### Fixed
+- Odświeżanie quiz stopów jest uruchamiane podczas przemieszczania gracza, a RPC wymusza maksymalny promień widoczności 150 m niezależnie od parametru klienta.
+- Punkty oddalone o ponad 150 m są natychmiast usuwane z lokalnej listy markerów aplikacji mobilnej.
 - Przywrócono widoczność ręcznych i automatycznych quiz stopów w aplikacji mobilnej: `get_nearby_quiz_stops` nie ukrywa już markerów na podstawie budżetu monet ani globalnej dostępności nieogranych pytań.
 - Zabezpieczono migrację RPC przed pozostawieniem starej, 3-parametrowej sygnatury `get_nearby_quiz_stops`.
 - Zwykły quiz stop jest ukrywany użytkownikowi dopiero wtedy, gdy we wszystkich przypisanych kategoriach nie pozostało żadne nieograne przez niego pytanie; generator pomija takie stopy i dobiera dostępne kategorie.

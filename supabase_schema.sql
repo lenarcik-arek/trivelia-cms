@@ -369,11 +369,18 @@ RETURNS SETOF json
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
+DECLARE
+  v_effective_radius_m double precision;
 BEGIN
+  v_effective_radius_m := LEAST(
+    GREATEST(COALESCE(radius_m, 150), 50),
+    150
+  );
+
   PERFORM public.ensure_auto_quiz_stops_near(
     user_lat,
     user_lng,
-    radius_m,
+    v_effective_radius_m,
     movement_bearing_deg
   );
 
@@ -392,7 +399,7 @@ BEGIN
     AND ST_DWithin(
       qs.location,
       ST_SetSRID(ST_MakePoint(user_lng, user_lat), 4326)::geography,
-      radius_m
+      v_effective_radius_m
     )
     -- Hide stops the user already played at
     AND NOT EXISTS (

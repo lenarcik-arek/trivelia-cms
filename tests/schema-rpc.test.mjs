@@ -77,3 +77,31 @@ test("generator liczy i wybiera tylko stopy dostępne dla bieżącego użytkowni
     "Kategorie automatycznego stopu muszą zawierać pytania nieograne przez bieżącego użytkownika."
   );
 });
+
+test("RPC wymusza maksymalny promień widoczności 150 m", () => {
+  const rpcStart = schema.indexOf(
+    "CREATE OR REPLACE FUNCTION public.get_nearby_quiz_stops("
+  );
+  const rpcEnd = schema.indexOf(
+    "-- 6. RPC: start_quiz_session",
+    rpcStart
+  );
+  const rpc = schema.slice(rpcStart, rpcEnd);
+
+  assert.ok(rpcStart >= 0 && rpcEnd > rpcStart);
+  assert.match(
+    rpc,
+    /v_effective_radius_m double precision[\s\S]*LEAST\([\s\S]*150[\s\S]*\)/,
+    "RPC musi ograniczać promień przekazany przez klienta do 150 m."
+  );
+  assert.match(
+    rpc,
+    /ensure_auto_quiz_stops_near\([\s\S]*v_effective_radius_m/,
+    "Generator musi używać tego samego ograniczonego promienia co zapytanie mapy."
+  );
+  assert.match(
+    rpc,
+    /ST_DWithin\([\s\S]*v_effective_radius_m/,
+    "Zapytanie markerów musi filtrować punkty ograniczonym promieniem."
+  );
+});
