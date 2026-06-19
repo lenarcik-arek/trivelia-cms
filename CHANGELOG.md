@@ -11,6 +11,7 @@ Wszystkie istotne zmiany w projekcie będą odnotowywane w tym pliku.
 - Zwykły quiz stop jest ukrywany użytkownikowi dopiero wtedy, gdy we wszystkich przypisanych kategoriach nie pozostało żadne nieograne przez niego pytanie; generator pomija takie stopy i dobiera dostępne kategorie.
 - Usunięto limit `coin_budget` ze zwykłych quiz stopów. Zwykłe quizy i pojedynki zawsze wypłacają należne normalne monety, a ograniczony budżet pozostaje wyłącznie dla stopów premium.
 - Zsynchronizowano wygaśnięcie pojedynku i quiz stopu: utworzenie pojedynku resetuje pełny czas życia zwykłego stopu (6 h dla automatycznego, 24 h dla ręcznego), a dołączenie zapewnia obu minimum 2 minuty życia w atomowej aktualizacji.
+- Dodano kolumnę `is_premium` do tabeli `quiz_stops` w celu jednoznacznego odróżniania stopów premium od zwykłych.
 
 ## [Unreleased] - 2026-06-16
 ### Added

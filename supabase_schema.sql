@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS public.quiz_stops (
   creator_id uuid REFERENCES public.profiles(id),
   location geography(POINT) NOT NULL,
   type text NOT NULL DEFAULT 'normal',
+  is_premium boolean NOT NULL DEFAULT false,
   categories text[] NOT NULL DEFAULT '{}',
   coin_budget integer NOT NULL DEFAULT 20,
   generation_source text NOT NULL DEFAULT 'manual',
@@ -124,6 +125,7 @@ DO $$ BEGIN
 EXCEPTION WHEN undefined_column THEN END; $$;
 
 -- Migration guards: automatic quiz stop generation metadata
+ALTER TABLE public.quiz_stops ADD COLUMN IF NOT EXISTS is_premium boolean NOT NULL DEFAULT false;
 ALTER TABLE public.quiz_stops ADD COLUMN IF NOT EXISTS generation_source text NOT NULL DEFAULT 'manual';
 ALTER TABLE public.quiz_stops ADD COLUMN IF NOT EXISTS generation_cell text;
 -- Normal stops have unlimited rewards; 0 is a compatibility sentinel.
