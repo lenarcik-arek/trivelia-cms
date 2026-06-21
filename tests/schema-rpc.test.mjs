@@ -105,3 +105,32 @@ test("RPC wymusza maksymalny promień widoczności 150 m", () => {
     "Zapytanie markerów musi filtrować punkty ograniczonym promieniem."
   );
 });
+
+test("generator tworzy dokładnie 2 niedostępne quiz stopy (odległość > 50m) gdy brak aktywnych", () => {
+  const generatorStart = schema.indexOf(
+    "CREATE OR REPLACE FUNCTION public.ensure_auto_quiz_stops_near("
+  );
+  const generatorEnd = schema.indexOf(
+    "-- 5. RPC: get_nearby_quiz_stops",
+    generatorStart
+  );
+  const generator = schema.slice(generatorStart, generatorEnd);
+
+  assert.ok(generatorStart >= 0 && generatorEnd > generatorStart);
+  assert.match(
+    generator,
+    /v_target_visible\s+int\s*:=\s*2;/,
+    "Target visible count generatora powinien wynosić 2."
+  );
+  assert.match(
+    generator,
+    /IF\s+v_visible_count\s*>\s*0\s+THEN\s+RETURN\s+0;\s+END\s+IF;/i,
+    "Generator powinien kończyć działanie, gdy v_visible_count > 0."
+  );
+  assert.match(
+    generator,
+    /v_distance_m\s*:=\s*55\s*\+/i,
+    "Generator powinien tworzyć punkty w odległości większej niż 50m (np. od 55m)."
+  );
+});
+

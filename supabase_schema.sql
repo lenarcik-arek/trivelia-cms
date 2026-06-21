@@ -167,7 +167,7 @@ DECLARE
   v_accessible_count int := 0;
   v_visible_count int := 0;
   v_created int := 0;
-  v_target_visible int := 3;
+  v_target_visible int := 2;
   v_min_stop_distance_m double precision := 70;
   v_attempt int := 0;
   v_max_attempts int := 30;
@@ -247,7 +247,8 @@ BEGIN
       )
     );
 
-  IF v_accessible_count > 0 AND v_visible_count >= v_target_visible THEN
+  -- Only generate auto stops if there are absolutely no active, visible quiz stops in visibility range.
+  IF v_visible_count > 0 THEN
     RETURN 0;
   END IF;
 
@@ -275,20 +276,18 @@ BEGIN
     RETURN 0;
   END IF;
 
-  WHILE (v_accessible_count = 0 OR v_visible_count < v_target_visible) AND v_attempt < v_max_attempts LOOP
+  WHILE v_visible_count < v_target_visible AND v_attempt < v_max_attempts LOOP
     v_attempt := v_attempt + 1;
 
-    IF v_accessible_count = 0 THEN
-      v_distance_m := 25 + random() * 20;
-      v_bearing_deg := random() * 360;
-    ELSE
-      v_distance_m := LEAST(80 + random() * GREATEST(radius_m - 80, 1), radius_m);
+    -- Distance must be visible but not accessible (50m < distance <= radius_m).
+    -- We generate a distance between 55m and radius_m (minimum 70m to give it some spread space).
+    v_distance_m := 55 + random() * (GREATEST(radius_m, 70) - 55);
 
-      IF movement_bearing_deg IS NULL THEN
-        v_bearing_deg := v_seed_bearing + (v_created * 120) + (random() * 40 - 20);
-      ELSE
-        v_bearing_deg := movement_bearing_deg + (random() * 90 - 45);
-      END IF;
+    IF movement_bearing_deg IS NULL THEN
+      v_bearing_deg := v_seed_bearing + (v_created * 180) + (random() * 40 - 20);
+    ELSE
+      -- Place stops to the left and right of the direction of movement.
+      v_bearing_deg := movement_bearing_deg + (v_created * 180 - 90) + (random() * 30 - 15);
     END IF;
 
     v_bearing_rad := radians(mod((v_bearing_deg + 360)::numeric, 360)::double precision);

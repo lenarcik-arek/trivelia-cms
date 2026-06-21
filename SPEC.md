@@ -67,8 +67,8 @@ src/
 - **Reward Budget:** Normal stops have unlimited normal-coin rewards and ignore `coin_budget` (`0` is stored as a compatibility sentinel). Premium stops retain an atomic, limited campaign budget.
 - **Visibility Radius:** Mobile map requests use a 150 m visibility radius. The quiz access radius remains 50 m and is validated by `start_quiz_session`.
 - **Continuous Refresh:** The mobile client refreshes nearby stops after each 25 m of movement and immediately removes cached markers farther than 150 m. The RPC also caps client-provided visibility radius at 150 m.
-- **Density Limits:** The MVP targets up to 3 active stops within the visibility radius and at least 1 stop within the access radius when generation is geometrically possible.
-- **Movement Direction:** The RPC accepts optional `movement_bearing_deg`. When provided, new visible stops are preferred in the user movement cone (`bearing +/- 45°`). Without bearing, stops are distributed around the user.
+- **Density Limits:** Automatic generation does not create any stops inside the 50 m accessibility range. Instead, if there are absolutely no active, visible quiz stops in the user's visibility range (150 m), the generator creates exactly 2 visible but unavailable stops (at a distance > 50 m and <= 150 m).
+- **Movement Direction:** The RPC accepts optional `movement_bearing_deg`. When provided, the two new stops are placed to the left and right of the direction of movement (at bearing offsets of +/- 90°). Without bearing, the stops are placed in opposite directions from each other using a random seed bearing.
 - **Type:** MVP auto-generation creates only `normal` quiz stops.
 - **TTL:** Auto-generated quiz stops expire after 6 hours to keep the map clean.
 - **Privacy:** User location is used only for the current RPC call and is not stored.

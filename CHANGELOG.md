@@ -2,6 +2,10 @@
 
 Wszystkie istotne zmiany w projekcie będą odnotowywane w tym pliku.
 
+## [Unreleased] - 2026-06-21
+### Changed
+- Zmieniono automatyczne generowanie quiz stopów: teraz nie tworzy ono stopów w zasięgu dostępności gracza (50 m) przy każdym pobraniu lokalizacji. Zamiast tego, jeśli w zasięgu widoczności nie ma żadnych aktywnych quiz stopów, generowane są dokładnie 2 stopy, które są widoczne ale niedostępne (odległość > 50 m).
+
 ## [Unreleased] - 2026-06-19
 ### Fixed
 - Odświeżanie quiz stopów jest uruchamiane podczas przemieszczania gracza, a RPC wymusza maksymalny promień widoczności 150 m niezależnie od parametru klienta.
